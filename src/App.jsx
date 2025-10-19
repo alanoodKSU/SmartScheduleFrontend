@@ -10,10 +10,10 @@ import Layout from "./Components/Layout";
 import { ToastProvider } from "./Hooks/ToastContext";
 
 // Pages (Auth)
-import SignUp from "./Pages/auth/SignUp";
-import Login from "./Pages/auth/Login";
-import ForgotPassword from "./Pages/auth/ForgotPassword";
-import ResetPassword from "./Pages/auth/ResetPassword";
+import SignUp from "./Pages/Auth/SignUp";
+import Login from "./Pages/Auth/Login";
+import ForgotPassword from "./Pages/Auth/ForgotPassword";
+import ResetPassword from "./Pages/Auth/ResetPassword";
 
 // Pages (Schedule Committee)
 import ScheduleCommitteeDashboard from "./Pages/ScheduleCommittee/ScheduleCommitteeDashboard";
