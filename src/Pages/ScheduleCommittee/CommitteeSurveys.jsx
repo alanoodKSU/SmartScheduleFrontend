@@ -39,7 +39,7 @@ export default function CommitteeSurveys() {
     };
     const loadCourses = async () => {
       try {
-        const res = await apiClient.get("/courses");
+        const res = await apiClient.get("/courses/electives");
         setCourses(res.data || []);
       } catch {
         setCourses([]);
@@ -266,7 +266,9 @@ export default function CommitteeSurveys() {
                 </div>
 
                 <div className="col-md-6">
-                  <label className="form-label fw-semibold">Internal Notes</label>
+                  <label className="form-label fw-semibold">
+                    Internal Notes
+                  </label>
                   <input
                     type="text"
                     className="form-control"

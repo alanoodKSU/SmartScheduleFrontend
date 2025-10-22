@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import apiClient from "../../Services/apiClient";
-import Navbar from "./ScheduleCommitteeNavbar"; // 🟢 adjust the path if needed
+import Navbar from "./ScheduleCommitteeNavbar"; // 🟢 adjust path if needed
 
 export default function IrregularStudents() {
   const [students, setStudents] = useState([]);
@@ -39,10 +39,9 @@ export default function IrregularStudents() {
 
   return (
     <>
-      {/* 🟣 Your global Navbar */}
+      {/* 🟣 Global Navbar */}
       <Navbar />
 
-      {/* 🟢 Page content */}
       <div className="container py-4">
         {/* Header */}
         <div className="d-flex justify-content-between align-items-center mb-4">
@@ -50,7 +49,9 @@ export default function IrregularStudents() {
             <h4 className="fw-bold" style={{ color: "#2563eb" }}>
               Irregular Students
             </h4>
-            <small className="text-muted">View all irregular students by level</small>
+            <small className="text-muted">
+              View all irregular students by level
+            </small>
           </div>
 
           <div className="d-flex align-items-center gap-2">
@@ -89,6 +90,7 @@ export default function IrregularStudents() {
             >
               <tr>
                 <th>ID</th>
+                <th>University ID</th>
                 <th>Name</th>
                 <th>Level</th>
                 <th>Remaining Courses</th>
@@ -100,6 +102,9 @@ export default function IrregularStudents() {
                 students.map((s) => (
                   <tr key={s.id}>
                     <td>{s.id}</td>
+                    <td className="fw-semibold text-primary">
+                      {s.university_id || "—"}
+                    </td>
                     <td className="fw-semibold">{s.student_name}</td>
                     <td>{s.level_name}</td>
                     <td>
@@ -116,7 +121,7 @@ export default function IrregularStudents() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="5" className="text-muted py-3">
+                  <td colSpan="6" className="text-muted py-3">
                     No irregular students found
                   </td>
                 </tr>

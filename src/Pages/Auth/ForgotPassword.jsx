@@ -16,8 +16,13 @@ export default function ForgotPassword() {
     setLoading(true);
 
     try {
-      const res = await apiClient.post("/auth/request-password-reset", { email });
-      setMessage(res.data.message || "✅ Reset instructions sent to your email.");
+      const res = await apiClient.post("/auth/request-password-reset", {
+        email,
+      });
+      setMessage(
+        res.data.message ||
+          "✅ A reset link has been sent to your email. Please check your inbox."
+      );
     } catch (err) {
       setError(err.response?.data?.error || "❌ Failed to send reset link");
     } finally {

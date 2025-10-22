@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import apiClient from "../../Services/apiClient";
+import { validatePassword } from "../../utils/validatePassword"; // ✅ import the utility
 
 export default function SignUp() {
   const [formData, setFormData] = useState({
@@ -14,8 +15,16 @@ export default function SignUp() {
   const [levels, setLevels] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [emailError, setEmailError] = useState(""); // 👈 للتحقق الفوري من الإيميل
+  const [emailError, setEmailError] = useState("");
   const [success, setSuccess] = useState("");
+  const [passwordInfo, setPasswordInfo] = useState({
+    missing: [],
+    strength: "",
+    color: "#dee2e6",
+    progress: 0,
+    isValid: false,
+  });
+
   const navigate = useNavigate();
 
   // ✅ Fetch levels
@@ -31,43 +40,60 @@ export default function SignUp() {
     fetchLevels();
   }, []);
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-
-    setFormData((prev) => ({ ...prev, [name]: value }));
-
-    // ✅ تحقق فوري من الإيميل عند الكتابة
-    if (name === "email" || name === "role") {
-      validateEmail(
-        name === "email" ? value : formData.email,
-        name === "role" ? value : formData.role
-      );
-    }
-  };
-
+  // ✅ Validate Email
   const validateEmail = (email, role) => {
     if (!email || !role) {
       setEmailError("");
       return;
     }
 
-    if (role === "student" && !email.endsWith("@student.ksu.edu.sa")) {
-      setEmailError("Students must use @student.ksu.edu.sa email");
+    if (role === "student") {
+      const studentEmailRegex = /^\d{9}@student\.ksu\.edu\.sa$/;
+      if (!studentEmailRegex.test(email)) {
+        setEmailError(
+          "Student email must start with 9 digits and end with @student.ksu.edu.sa"
+        );
+        return;
+      }
     } else if (role !== "student" && !email.endsWith("@ksu.edu.sa")) {
       setEmailError("Faculty/Staff must use @ksu.edu.sa email");
-    } else {
-      setEmailError("");
+      return;
+    }
+
+    setEmailError("");
+  };
+
+  // ✅ Handle input changes
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+
+    if (name === "email" || name === "role") {
+      validateEmail(
+        name === "email" ? value : formData.email,
+        name === "role" ? value : formData.role
+      );
+    }
+
+    if (name === "password") {
+      const analysis = validatePassword(value);
+      setPasswordInfo(analysis);
     }
   };
 
+  // ✅ Handle submit
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     setSuccess("");
 
-    // ✅ لا تكمّل التسجيل إذا فيه خطأ بالإيميل
     if (emailError) {
       setError(emailError);
+      return;
+    }
+
+    if (!passwordInfo.isValid) {
+      setError("Please make sure your password meets all the rules.");
       return;
     }
 
@@ -88,10 +114,10 @@ export default function SignUp() {
       }
 
       await apiClient.post("/auth/register", payload);
-      setSuccess(" Account created successfully! Redirecting...");
-      setTimeout(() => navigate("/login"), 1500);
+      setSuccess("✅ Account created successfully! Redirecting...");
+      setTimeout(() => navigate("/login"), 2000);
     } catch (err) {
-      setError(err.response?.data?.error || " Failed to create account");
+      setError(err.response?.data?.error || "❌ Failed to create account");
     } finally {
       setLoading(false);
     }
@@ -150,7 +176,7 @@ export default function SignUp() {
             )}
           </div>
 
-          {/* Password */}
+          {/* Password with strength meter */}
           <div className="mb-3">
             <label className="form-label fw-semibold">Password</label>
             <input
@@ -162,6 +188,43 @@ export default function SignUp() {
               onChange={handleChange}
               required
             />
+
+            {formData.password && (
+              <>
+                {/* Progress bar */}
+                <div
+                  className="progress mt-2"
+                  style={{ height: "8px", borderRadius: "10px" }}
+                >
+                  <div
+                    className="progress-bar"
+                    role="progressbar"
+                    style={{
+                      width: `${passwordInfo.progress}%`,
+                      backgroundColor: passwordInfo.color,
+                      transition: "width 0.4s ease",
+                    }}
+                  ></div>
+                </div>
+
+                {/* Strength and missing rules */}
+                <div className="d-flex justify-content-between small mt-1">
+                  <span
+                    className="fw-semibold"
+                    style={{ color: passwordInfo.color }}
+                  >
+                    {passwordInfo.strength}
+                  </span>
+
+                  {!passwordInfo.isValid &&
+                    passwordInfo.missing.length > 0 && (
+                      <span className="text-danger text-end small">
+                        {passwordInfo.missing.join(", ")}
+                      </span>
+                    )}
+                </div>
+              </>
+            )}
           </div>
 
           {/* Role */}

@@ -83,7 +83,8 @@ export default function RegistrarIrregularStudentsPage() {
     const matchesSearch =
       !search ||
       s.student_name.toLowerCase().includes(search.toLowerCase()) ||
-      s.student_id.toString().includes(search);
+      s.student_id?.toString().includes(search) ||
+      s.university_id?.toString().includes(search);
     return matchesLevel && matchesSearch;
   });
 
@@ -111,7 +112,7 @@ export default function RegistrarIrregularStudentsPage() {
     setShowModal(true);
   };
 
-  // 🟢 Save with backend error handling (shows correct message)
+  // 🟢 Save
   const handleSave = async () => {
     try {
       const payload = { ...form };
@@ -129,14 +130,12 @@ export default function RegistrarIrregularStudentsPage() {
     } catch (err) {
       console.error("❌ Failed to save student:", err);
 
-      // ✅ Extract backend error message if available
       const backendMsg =
         err.response?.data?.error ||
         err.response?.data?.message ||
         err.response?.data ||
         "Something went wrong.";
 
-      // ✅ Show friendly readable message
       error(backendMsg);
     }
   };
@@ -165,22 +164,14 @@ export default function RegistrarIrregularStudentsPage() {
     });
   };
 
-  // 🟢 Dropdown student options (only name shown)
+  // 🟢 Dropdown student options
   const studentOptions = allStudents.map((s) => ({
     value: s.id,
-    label: s.name,
+    label: `${s.name} (${s.university_id || "No ID"})`,
   }));
 
-  // 🟢 Remaining and Needed courses (show all)
-  const remainingCourses = courses.map((c) => ({
-    id: c.id,
-    code: c.code,
-  }));
-
-  const neededCourses = courses.map((c) => ({
-    id: c.id,
-    code: c.code,
-  }));
+  const remainingCourses = courses.map((c) => ({ id: c.id, code: c.code }));
+  const neededCourses = courses.map((c) => ({ id: c.id, code: c.code }));
 
   return (
     <div className="container py-4">
@@ -199,7 +190,7 @@ export default function RegistrarIrregularStudentsPage() {
       <div className="d-flex gap-3 mb-3">
         <Form.Control
           style={{ maxWidth: "250px" }}
-          placeholder="🔍 Search by student name or ID"
+          placeholder="🔍 Search by name, ID, or University ID"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -252,7 +243,9 @@ export default function RegistrarIrregularStudentsPage() {
             ) : (
               filteredStudents.map((st) => (
                 <tr key={st.id}>
-                  <td>{st.student_id}</td>
+                  <td className="fw-semibold text-primary">
+                    {st.university_id || "—"}
+                  </td>
                   <td>{st.student_name}</td>
                   <td>{st.level_name}</td>
                   <td>
@@ -319,7 +312,6 @@ export default function RegistrarIrregularStudentsPage() {
         </Modal.Header>
         <Modal.Body>
           <Form>
-            {/* Student Dropdown */}
             <Form.Group className="mb-3">
               <Form.Label>Student</Form.Label>
               <Select
@@ -337,7 +329,6 @@ export default function RegistrarIrregularStudentsPage() {
             </Form.Group>
 
             <div className="row">
-              {/* Remaining Courses */}
               <div className="col-md-6">
                 <Form.Label className="fw-bold">Remaining Courses</Form.Label>
                 <div
@@ -358,7 +349,6 @@ export default function RegistrarIrregularStudentsPage() {
                 </div>
               </div>
 
-              {/* Needed Courses (show all) */}
               <div className="col-md-6">
                 <Form.Label className="fw-bold">Needed Courses</Form.Label>
                 <div

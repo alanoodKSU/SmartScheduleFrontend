@@ -6,7 +6,7 @@ import RegistrarNavbar from "./RegistrarNavbar";
 import { useToast } from "../../Hooks/ToastContext";
 
 export default function RegistrarSectionCapacityPage() {
-  const { success, error, warning, info } = useToast();
+  const { success, error, warning } = useToast();
   const [sections, setSections] = useState([]);
   const [levels, setLevels] = useState([]);
   const [selectedLevel, setSelectedLevel] = useState("");
@@ -31,6 +31,7 @@ export default function RegistrarSectionCapacityPage() {
     try {
       const res = await apiClient.get("/sections", {
         params: { level_id: selectedLevel || null },
+        headers: { "Cache-Control": "no-cache" },
       });
       setSections(res.data || []);
     } catch (err) {
@@ -118,6 +119,7 @@ export default function RegistrarSectionCapacityPage() {
           >
             <tr>
               <th>Section</th>
+              <th>Course</th>
               <th>Level</th>
               <th>Type</th>
               <th>Current</th>
@@ -141,12 +143,43 @@ export default function RegistrarSectionCapacityPage() {
             ) : (
               sections.map((s) => (
                 <tr key={s.id}>
-                  <td>{s.section_number}</td>
+                  {/* Section Number or External ID */}
                   <td>
-                    <Badge bg="primary">
-                      {s.level_name || `Level ${s.level_id}`}
+                    {s.section_number ? (
+                      s.section_number
+                    ) : s.is_external ? (
+                      <Badge bg="dark" className="px-2">
+                        EXT-{s.id}
+                      </Badge>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+
+                  {/* 🟣 Course Name */}
+                  <td>
+                    <div className="fw-semibold">{s.course_code || "—"}</div>
+                    <div className="text-muted small">{s.course_name}</div>
+                  </td>
+
+                  {/* Level */}
+                  <td>
+                    <Badge
+                      bg="primary"
+                      className="px-3 py-2"
+                      style={{
+                        fontSize: "0.85rem",
+                        backgroundColor: s.is_external ? "#6610f2" : "#0d6efd",
+                      }}
+                    >
+                      {s.level_display || s.level_name || "—"}
+                      {s.is_external && (
+                        <span className="ms-1 fw-light">(external)</span>
+                      )}
                     </Badge>
                   </td>
+
+                  {/* Type */}
                   <td>
                     <Badge
                       bg={
@@ -161,7 +194,11 @@ export default function RegistrarSectionCapacityPage() {
                       {s.type || "—"}
                     </Badge>
                   </td>
-                  <td>{s.enrolled_count || 0}</td>
+
+                  {/* Current */}
+                  <td>{s.enrolled_expected || 0}</td>
+
+                  {/* Capacity */}
                   <td>
                     {editingId === s.id ? (
                       <Form.Control
@@ -179,6 +216,8 @@ export default function RegistrarSectionCapacityPage() {
                       s.capacity || 0
                     )}
                   </td>
+
+                  {/* Actions */}
                   <td>
                     {editingId === s.id ? (
                       <Button

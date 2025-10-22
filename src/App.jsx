@@ -14,6 +14,7 @@ import SignUp from "./Pages/Auth/SignUp";
 import Login from "./Pages/Auth/Login";
 import ForgotPassword from "./Pages/Auth/ForgotPassword";
 import ResetPassword from "./Pages/Auth/ResetPassword";
+import VerifyEmail from "./Pages/Auth/VerifyEmail";
 
 // Pages (Schedule Committee)
 import ScheduleCommitteeDashboard from "./Pages/ScheduleCommittee/ScheduleCommitteeDashboard";
@@ -56,6 +57,7 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/verify" element={<VerifyEmail />} />
 
           {/* 🌐 Layout Wrapper */}
           <Route element={<Layout />}>
