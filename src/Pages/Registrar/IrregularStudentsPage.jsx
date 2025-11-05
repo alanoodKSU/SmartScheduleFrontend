@@ -5,6 +5,7 @@ import Select from "react-select";
 import apiClient from "../../Services/apiClient";
 import RegistrarNavbar from "./RegistrarNavbar";
 import { useToast } from "../../Hooks/ToastContext";
+import { useSharedMap } from "../../Hooks/useSharedMap"; // 🟣 real-time sync
 
 export default function RegistrarIrregularStudentsPage() {
   const { success, error, warning, info } = useToast();
@@ -22,6 +23,21 @@ export default function RegistrarIrregularStudentsPage() {
     remaining_courses: [],
     required_courses: [],
   });
+
+  // 🟣 Connect to Y.js shared map
+  const { data: sharedData, updateField } = useSharedMap("irregular_students");
+
+  // 🟣 React to incoming Y.js updates from other users
+  useEffect(() => {
+    if (!sharedData?.lastChange) return;
+    const { type } = sharedData.lastChange;
+
+    console.log("📨 Yjs update received:", sharedData.lastChange);
+
+    if (type === "reload") {
+      fetchIrregularStudents();
+    }
+  }, [sharedData]);
 
   // 🟢 Load all courses
   const fetchCourses = async () => {
@@ -127,6 +143,9 @@ export default function RegistrarIrregularStudentsPage() {
 
       setShowModal(false);
       fetchIrregularStudents();
+
+      // 🔊 Broadcast change to other users
+      updateField("lastChange", { type: "reload", timestamp: Date.now() });
     } catch (err) {
       console.error("❌ Failed to save student:", err);
 
@@ -148,6 +167,9 @@ export default function RegistrarIrregularStudentsPage() {
       await apiClient.delete(`/irregular-students/${id}`);
       success("Student deleted successfully");
       fetchIrregularStudents();
+
+      // 🔊 Notify others to refresh
+      updateField("lastChange", { type: "reload", timestamp: Date.now() });
     } catch (err) {
       console.error("❌ Failed to delete student:", err);
       error("Failed to delete student");

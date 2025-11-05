@@ -1,5 +1,16 @@
 import React, { useEffect, useState } from "react";
-import { Card, Spinner, Badge, Table, Form, InputGroup, Button, Row, Col } from "react-bootstrap";
+import {
+  Card,
+  Spinner,
+  Badge,
+  Table,
+  Form,
+  InputGroup,
+  Button,
+  Row,
+  Col,
+  Dropdown,
+} from "react-bootstrap";
 import {
   FaCalendarAlt,
   FaClock,
@@ -13,9 +24,11 @@ import {
   FaBook,
   FaBuilding,
   FaChartBar,
+  FaEdit,
 } from "react-icons/fa";
 import apiClient from "../../Services/apiClient";
 import LoadCommitteeNavbar from "./LoadCommitteeNavbar";
+import { useSharedMap } from "../../Hooks/useSharedMap"; // ✅ import real-time hook
 
 // 🎨 Color palette for courses
 const COURSE_COLORS = {
@@ -23,6 +36,28 @@ const COURSE_COLORS = {
   secondary: ["#EC4899", "#F43F5E", "#EF4444", "#F97316"],
   accent: ["#F59E0B", "#EAB308", "#84CC16", "#22C55E"],
   neutral: ["#06B6D4", "#0EA5E9", "#3B82F6", "#60A5FA"],
+};
+
+// 🎨 Status colors and configuration
+const STATUS_CONFIG = {
+  Draft: {
+    color: "#6B7280", // gray
+    bgColor: "#F3F4F6",
+    textColor: "#374151",
+    borderColor: "#D1D5DB",
+  },
+  Accepted: {
+    color: "#10B981", // green
+    bgColor: "#ECFDF5",
+    textColor: "#065F46",
+    borderColor: "#A7F3D0",
+  },
+  Rejected: {
+    color: "#EF4444", // red
+    bgColor: "#FEF2F2",
+    textColor: "#991B1B",
+    borderColor: "#FECACA",
+  },
 };
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday"];
@@ -45,6 +80,23 @@ export default function LoadCommitteeDashboard() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedFaculty, setSelectedFaculty] = useState(null);
   const [facultyStats, setFacultyStats] = useState(null);
+  const [updatingStatus, setUpdatingStatus] = useState(null);
+
+  // 🔗 connect to shared map (all committee members share this)
+  const { data: sharedData, updateField } = useSharedMap("committee_dashboard");
+
+  // 🔄 whenever someone else updates status
+  useEffect(() => {
+    if (!sharedData?.lastUpdate) return;
+    const { sectionId, newStatus } = sharedData.lastUpdate;
+    setSections((prev) =>
+      prev.map((s) => (s.id === sectionId ? { ...s, status: newStatus } : s))
+    );
+    setFilteredSections((prev) =>
+      prev.map((s) => (s.id === sectionId ? { ...s, status: newStatus } : s))
+    );
+    console.log(`🟣 Synced section ${sectionId} → ${newStatus}`);
+  }, [sharedData]);
 
   // 🟣 Load all sections
   const fetchAllSections = async () => {
@@ -66,21 +118,64 @@ export default function LoadCommitteeDashboard() {
     fetchAllSections();
   }, []);
 
+  // 🟣 Update section status (sync + broadcast)
+  const updateSectionStatus = async (sectionId, newStatus) => {
+    setUpdatingStatus(sectionId);
+    try {
+      console.log(`🔄 Updating section ${sectionId} status to: ${newStatus}`);
+      await apiClient.patch(`/sections/update_section_status/${sectionId}`, {
+        status: newStatus,
+      });
+
+      // Update local state
+      setSections((prevSections) =>
+        prevSections.map((section) =>
+          section.id === sectionId ? { ...section, status: newStatus } : section
+        )
+      );
+
+      setFilteredSections((prevSections) =>
+        prevSections.map((section) =>
+          section.id === sectionId ? { ...section, status: newStatus } : section
+        )
+      );
+
+      // 🔊 broadcast to everyone in real time
+      updateField("lastUpdate", {
+        sectionId,
+        newStatus,
+        timestamp: Date.now(),
+      });
+
+      console.log("✅ Status updated & synced");
+    } catch (err) {
+      console.error("Failed to update section status:", err);
+      alert("Failed to update section status. Please try again.");
+    } finally {
+      setUpdatingStatus(null);
+    }
+  };
+
   // 🟣 Filter sections based on search and faculty selection
   useEffect(() => {
     let filtered = sections;
 
     if (searchTerm) {
-      filtered = filtered.filter(section =>
-        section.faculty_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        section.course_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        section.course_code?.toLowerCase().includes(searchTerm.toLowerCase())
+      filtered = filtered.filter(
+        (section) =>
+          section.faculty_name
+            ?.toLowerCase()
+            .includes(searchTerm.toLowerCase()) ||
+          section.course_name
+            ?.toLowerCase()
+            .includes(searchTerm.toLowerCase()) ||
+          section.course_code?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 
     if (selectedFaculty) {
-      filtered = filtered.filter(section => 
-        section.faculty_name === selectedFaculty
+      filtered = filtered.filter(
+        (section) => section.faculty_name === selectedFaculty
       );
     }
 
@@ -90,8 +185,10 @@ export default function LoadCommitteeDashboard() {
   // 🟣 Calculate faculty statistics when faculty is selected
   useEffect(() => {
     if (selectedFaculty && filteredSections.length > 0) {
-      const facultySections = filteredSections.filter(s => s.faculty_name === selectedFaculty);
-      
+      const facultySections = filteredSections.filter(
+        (s) => s.faculty_name === selectedFaculty
+      );
+
       // Calculate weekly hours
       const weeklyHours = facultySections.reduce((total, section) => {
         const start = new Date(`1970-01-01T${section.start_time}`);
@@ -118,12 +215,12 @@ export default function LoadCommitteeDashboard() {
         totalSections: facultySections.length,
         totalCourses: Object.keys(courseDistribution).length,
         totalLevels: Object.keys(levelDistribution).length,
-        lectures: facultySections.filter(s => s.type === "lecture").length,
-        labs: facultySections.filter(s => s.type === "lab").length,
-        days: [...new Set(facultySections.map(s => s.day))].length,
+        lectures: facultySections.filter((s) => s.type === "lecture").length,
+        labs: facultySections.filter((s) => s.type === "lab").length,
+        days: [...new Set(facultySections.map((s) => s.day))].length,
         weeklyHours: weeklyHours.toFixed(1),
         levelDistribution,
-        courseDistribution
+        courseDistribution,
       };
       setFacultyStats(stats);
     } else {
@@ -132,18 +229,20 @@ export default function LoadCommitteeDashboard() {
   }, [selectedFaculty, filteredSections]);
 
   // 🟣 Get unique faculty names for filter dropdown
-  const uniqueFaculties = [...new Set(sections.map(s => s.faculty_name).filter(Boolean))].sort();
+  const uniqueFaculties = [
+    ...new Set(sections.map((s) => s.faculty_name).filter(Boolean)),
+  ].sort();
 
   // 🟣 Get overall statistics
   const overallStats = {
     totalSections: sections.length,
     totalFaculties: uniqueFaculties.length,
-    totalCourses: [...new Set(sections.map(s => s.course_code))].length,
-    totalLevels: [...new Set(sections.map(s => s.level_name))].length,
-    lectures: sections.filter(s => s.type === "lecture").length,
-    labs: sections.filter(s => s.type === "lab").length,
-    assignedSections: sections.filter(s => s.faculty_name).length,
-    unassignedSections: sections.filter(s => !s.faculty_name).length,
+    totalCourses: [...new Set(sections.map((s) => s.course_code))].length,
+    totalLevels: [...new Set(sections.map((s) => s.level_name))].length,
+    lectures: sections.filter((s) => s.type === "lecture").length,
+    labs: sections.filter((s) => s.type === "lab").length,
+    assignedSections: sections.filter((s) => s.faculty_name).length,
+    unassignedSections: sections.filter((s) => !s.faculty_name).length,
   };
 
   // 🎨 Enhanced color mapping
@@ -165,6 +264,23 @@ export default function LoadCommitteeDashboard() {
     }
 
     return baseColor;
+  };
+
+  // 🎨 Get background color based on status
+  const getStatusBackgroundColor = (status) => {
+    return STATUS_CONFIG[status]?.bgColor || STATUS_CONFIG.Draft.bgColor;
+  };
+
+  // 🎨 Get status text color
+  const getStatusTextColor = (status) => {
+    return STATUS_CONFIG[status]?.textColor || STATUS_CONFIG.Draft.textColor;
+  };
+
+  // 🎨 Get status border color
+  const getStatusBorderColor = (status) => {
+    return (
+      STATUS_CONFIG[status]?.borderColor || STATUS_CONFIG.Draft.borderColor
+    );
   };
 
   // 🎨 Get complementary text color
@@ -193,7 +309,7 @@ export default function LoadCommitteeDashboard() {
       }}
     >
       <LoadCommitteeNavbar />
-      
+
       <div className="container-fluid py-4">
         <div className="row">
           {/* 🔹 Left Sidebar - Statistics & Filters */}
@@ -253,11 +369,13 @@ export default function LoadCommitteeDashboard() {
                     </Form.Label>
                     <Form.Select
                       value={selectedFaculty || ""}
-                      onChange={(e) => setSelectedFaculty(e.target.value || null)}
+                      onChange={(e) =>
+                        setSelectedFaculty(e.target.value || null)
+                      }
                       style={{ borderRadius: "8px" }}
                     >
                       <option value="">All Faculty Members</option>
-                      {uniqueFaculties.map(faculty => (
+                      {uniqueFaculties.map((faculty) => (
                         <option key={faculty} value={faculty}>
                           {faculty}
                         </option>
@@ -295,41 +413,53 @@ export default function LoadCommitteeDashboard() {
                       <FaUsers size={20} className="mb-2" />
                       <h6 className="fw-bold mb-1">Overall Statistics</h6>
                       <p className="small opacity-90 mb-2">System Overview</p>
-                      
+
                       <Row className="g-2 text-center">
                         <Col xs={6}>
                           <div className="p-2">
-                            <div className="h6 fw-bold mb-0">{overallStats.totalSections}</div>
+                            <div className="h6 fw-bold mb-0">
+                              {overallStats.totalSections}
+                            </div>
                             <div className="small opacity-90">Sections</div>
                           </div>
                         </Col>
                         <Col xs={6}>
                           <div className="p-2">
-                            <div className="h6 fw-bold mb-0">{overallStats.totalFaculties}</div>
+                            <div className="h6 fw-bold mb-0">
+                              {overallStats.totalFaculties}
+                            </div>
                             <div className="small opacity-90">Faculty</div>
                           </div>
                         </Col>
                         <Col xs={6}>
                           <div className="p-2">
-                            <div className="h6 fw-bold mb-0">{overallStats.totalCourses}</div>
+                            <div className="h6 fw-bold mb-0">
+                              {overallStats.totalCourses}
+                            </div>
                             <div className="small opacity-90">Courses</div>
                           </div>
                         </Col>
                         <Col xs={6}>
                           <div className="p-2">
-                            <div className="h6 fw-bold mb-0">{overallStats.totalLevels}</div>
+                            <div className="h6 fw-bold mb-0">
+                              {overallStats.totalLevels}
+                            </div>
                             <div className="small opacity-90">Levels</div>
                           </div>
                         </Col>
                         <Col xs={6}>
                           <div className="p-2">
-                            <div className="h6 fw-bold mb-0">{overallStats.lectures}</div>
+                            <div className="h6 fw-bold mb-0">
+                              {overallStats.lectures}
+                            </div>
                             <div className="small opacity-90">Lectures</div>
                           </div>
                         </Col>
                         <Col xs={6}>
                           <div className="p-2">
-                            <div className="h6 fw-bold mb-0">{overallStats.labs}</div>
+                            <div className="h6 fw-bold mb-0">
+                              {overallStats.labs}
+                            </div>
                             <div className="small opacity-90">Labs</div>
                           </div>
                         </Col>
@@ -353,30 +483,40 @@ export default function LoadCommitteeDashboard() {
                           <FaChalkboardTeacher size={20} className="mb-2" />
                           <h6 className="fw-bold mb-1">{facultyStats.name}</h6>
                           <p className="small opacity-90 mb-2">Teaching Load</p>
-                          
+
                           <Row className="g-2 text-center">
                             <Col xs={6}>
                               <div className="p-2">
-                                <div className="h6 fw-bold mb-0">{facultyStats.totalSections}</div>
+                                <div className="h6 fw-bold mb-0">
+                                  {facultyStats.totalSections}
+                                </div>
                                 <div className="small opacity-90">Sections</div>
                               </div>
                             </Col>
                             <Col xs={6}>
                               <div className="p-2">
-                                <div className="h6 fw-bold mb-0">{facultyStats.totalCourses}</div>
+                                <div className="h6 fw-bold mb-0">
+                                  {facultyStats.totalCourses}
+                                </div>
                                 <div className="small opacity-90">Courses</div>
                               </div>
                             </Col>
                             <Col xs={6}>
                               <div className="p-2">
-                                <div className="h6 fw-bold mb-0">{facultyStats.totalLevels}</div>
+                                <div className="h6 fw-bold mb-0">
+                                  {facultyStats.totalLevels}
+                                </div>
                                 <div className="small opacity-90">Levels</div>
                               </div>
                             </Col>
                             <Col xs={6}>
                               <div className="p-2">
-                                <div className="h6 fw-bold mb-0">{facultyStats.weeklyHours}h</div>
-                                <div className="small opacity-90">Hours/Week</div>
+                                <div className="h6 fw-bold mb-0">
+                                  {facultyStats.weeklyHours}h
+                                </div>
+                                <div className="small opacity-90">
+                                  Hours/Week
+                                </div>
                               </div>
                             </Col>
                           </Row>
@@ -385,21 +525,32 @@ export default function LoadCommitteeDashboard() {
                     </Card>
 
                     {/* 🔹 Level Distribution */}
-                    <Card className="border-0 mb-3" style={{ borderRadius: "12px" }}>
+                    <Card
+                      className="border-0 mb-3"
+                      style={{ borderRadius: "12px" }}
+                    >
                       <Card.Body className="p-3">
                         <h6 className="fw-semibold text-gray-700 mb-3">
                           <FaBuilding className="me-2" />
                           Level Distribution
                         </h6>
                         <div className="small text-muted">
-                          {Object.entries(facultyStats.levelDistribution).map(([level, count]) => (
-                            <div key={level} className="mb-2 d-flex justify-content-between align-items-center">
-                              <span>{level}:</span>
-                              <Badge bg="primary" style={{ borderRadius: "8px" }}>
-                                {count}
-                              </Badge>
-                            </div>
-                          ))}
+                          {Object.entries(facultyStats.levelDistribution).map(
+                            ([level, count]) => (
+                              <div
+                                key={level}
+                                className="mb-2 d-flex justify-content-between align-items-center"
+                              >
+                                <span>{level}:</span>
+                                <Badge
+                                  bg="primary"
+                                  style={{ borderRadius: "8px" }}
+                                >
+                                  {count}
+                                </Badge>
+                              </div>
+                            )
+                          )}
                         </div>
                       </Card.Body>
                     </Card>
@@ -411,18 +562,30 @@ export default function LoadCommitteeDashboard() {
                           <FaBook className="me-2" />
                           Course Distribution
                         </h6>
-                        <div className="small text-muted" style={{ maxHeight: "200px", overflowY: "auto" }}>
-                          {Object.entries(facultyStats.courseDistribution).map(([course, count]) => (
-                            <div key={course} className="mb-2">
-                              <div className="fw-semibold text-gray-800">{course.split(' - ')[0]}</div>
-                              <div className="d-flex justify-content-between align-items-center">
-                                <small className="text-muted">{course.split(' - ')[1]}</small>
-                                <Badge bg="success" style={{ borderRadius: "8px" }}>
-                                  {count}
-                                </Badge>
+                        <div
+                          className="small text-muted"
+                          style={{ maxHeight: "200px", overflowY: "auto" }}
+                        >
+                          {Object.entries(facultyStats.courseDistribution).map(
+                            ([course, count]) => (
+                              <div key={course} className="mb-2">
+                                <div className="fw-semibold text-gray-800">
+                                  {course.split(" - ")[0]}
+                                </div>
+                                <div className="d-flex justify-content-between align-items-center">
+                                  <small className="text-muted">
+                                    {course.split(" - ")[1]}
+                                  </small>
+                                  <Badge
+                                    bg="success"
+                                    style={{ borderRadius: "8px" }}
+                                  >
+                                    {count}
+                                  </Badge>
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            )
+                          )}
                         </div>
                       </Card.Body>
                     </Card>
@@ -438,24 +601,46 @@ export default function LoadCommitteeDashboard() {
                     <div className="small text-muted">
                       <div className="mb-2 d-flex justify-content-between">
                         <span>Showing Sections:</span>
-                        <strong className="text-primary">{filteredSections.length}</strong>
+                        <strong className="text-primary">
+                          {filteredSections.length}
+                        </strong>
                       </div>
                       <div className="mb-2 d-flex justify-content-between">
                         <span>Faculty Members:</span>
                         <strong className="text-info">
-                          {[...new Set(filteredSections.map(s => s.faculty_name).filter(Boolean))].length}
+                          {
+                            [
+                              ...new Set(
+                                filteredSections
+                                  .map((s) => s.faculty_name)
+                                  .filter(Boolean)
+                              ),
+                            ].length
+                          }
                         </strong>
                       </div>
                       <div className="mb-2 d-flex justify-content-between">
                         <span>Courses:</span>
                         <strong className="text-success">
-                          {[...new Set(filteredSections.map(s => s.course_code))].length}
+                          {
+                            [
+                              ...new Set(
+                                filteredSections.map((s) => s.course_code)
+                              ),
+                            ].length
+                          }
                         </strong>
                       </div>
                       <div className="d-flex justify-content-between">
                         <span>Levels:</span>
                         <strong className="text-warning">
-                          {[...new Set(filteredSections.map(s => s.level_name))].length}
+                          {
+                            [
+                              ...new Set(
+                                filteredSections.map((s) => s.level_name)
+                              ),
+                            ].length
+                          }
                         </strong>
                       </div>
                     </div>
@@ -569,13 +754,14 @@ export default function LoadCommitteeDashboard() {
                       <FaCalendarAlt size={32} color="white" />
                     </div>
                     <h5 className="text-gray-700 mb-2">
-                      {sections.length === 0 ? "No Sections Found" : "No Matching Sections"}
+                      {sections.length === 0
+                        ? "No Sections Found"
+                        : "No Matching Sections"}
                     </h5>
                     <p className="text-muted">
-                      {sections.length === 0 
-                        ? "No sections have been scheduled yet." 
-                        : "No sections match your current filters. Try adjusting your search criteria."
-                      }
+                      {sections.length === 0
+                        ? "No sections have been scheduled yet."
+                        : "No sections match your current filters. Try adjusting your search criteria."}
                     </p>
                     {(searchTerm || selectedFaculty) && (
                       <Button
@@ -613,6 +799,7 @@ export default function LoadCommitteeDashboard() {
                           <th className="py-3">Time</th>
                           <th className="py-3">Room</th>
                           <th className="py-3">Level</th>
+                          <th className="py-3">Status</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -622,12 +809,11 @@ export default function LoadCommitteeDashboard() {
                             sec.type
                           );
                           const textColor = getTextColor(bgColor);
+                          const currentStatus = sec.status || "Draft";
+                          const statusConfig = STATUS_CONFIG[currentStatus];
 
                           return (
-                            <tr
-                              key={sec.id}
-                              style={{ transition: "all 0.2s" }}
-                            >
+                            <tr key={sec.id} style={{ transition: "all 0.2s" }}>
                               <td className="py-3">
                                 <div
                                   className="fw-bold"
@@ -666,9 +852,7 @@ export default function LoadCommitteeDashboard() {
                                   {sec.type}
                                 </Badge>
                               </td>
-                              <td className="py-3 fw-semibold">
-                                {sec.day}
-                              </td>
+                              <td className="py-3 fw-semibold">{sec.day}</td>
                               <td className="py-3">
                                 <span
                                   style={{
@@ -679,9 +863,7 @@ export default function LoadCommitteeDashboard() {
                                   {sec.start_time_hhmm} - {sec.end_time_hhmm}
                                 </span>
                               </td>
-                              <td className="py-3">
-                                {sec.room_name || "-"}
-                              </td>
+                              <td className="py-3">{sec.room_name || "-"}</td>
                               <td className="py-3">
                                 <Badge
                                   bg="secondary"
@@ -692,6 +874,73 @@ export default function LoadCommitteeDashboard() {
                                 >
                                   {sec.level_name}
                                 </Badge>
+                              </td>
+                              <td className="py-3">
+                                <div className="d-flex align-items-center gap-2">
+                                  <Badge
+                                    style={{
+                                      background: statusConfig.bgColor,
+                                      color: statusConfig.textColor,
+                                      border: `1px solid ${statusConfig.color}`,
+                                      padding: "6px 12px",
+                                      borderRadius: "20px",
+                                      minWidth: "100px",
+                                      textAlign: "center",
+                                    }}
+                                  >
+                                    {currentStatus}
+                                  </Badge>
+                                  <Dropdown drop="up">
+                                    <Dropdown.Toggle
+                                      variant="link"
+                                      size="sm"
+                                      disabled={updatingStatus === sec.id}
+                                      style={{
+                                        color: "#6B7280",
+                                        border: "none",
+                                        padding: "4px",
+                                        background: "transparent",
+                                      }}
+                                    >
+                                      {updatingStatus === sec.id ? (
+                                        <Spinner animation="border" size="sm" />
+                                      ) : (
+                                        <FaEdit size={14} />
+                                      )}
+                                    </Dropdown.Toggle>
+
+                                    <Dropdown.Menu style={{ zIndex: 9999 }}>
+                                      <Dropdown.Header>
+                                        Change Status
+                                      </Dropdown.Header>
+                                      {Object.keys(STATUS_CONFIG).map(
+                                        (status) => (
+                                          <Dropdown.Item
+                                            key={status}
+                                            onClick={() =>
+                                              updateSectionStatus(
+                                                sec.id,
+                                                status
+                                              )
+                                            }
+                                            style={{
+                                              color:
+                                                STATUS_CONFIG[status].textColor,
+                                              background:
+                                                currentStatus === status
+                                                  ? STATUS_CONFIG[status]
+                                                      .bgColor
+                                                  : "transparent",
+                                            }}
+                                          >
+                                            {status}
+                                            {currentStatus === status && " ✓"}
+                                          </Dropdown.Item>
+                                        )
+                                      )}
+                                    </Dropdown.Menu>
+                                  </Dropdown>
+                                </div>
                               </td>
                             </tr>
                           );
@@ -739,22 +988,26 @@ export default function LoadCommitteeDashboard() {
                             </td>
                             {DAYS.map((day) => {
                               const sec = grid[day]?.[start];
-                              const bgColor = sec
-                                ? colorForCourse(sec.course_code, sec.type)
-                                : "#FFFFFF";
-                              const textColor = getTextColor(bgColor);
+                              const currentStatus = sec?.status || "Draft";
+                              const statusBgColor =
+                                getStatusBackgroundColor(currentStatus);
+                              const statusTextColor =
+                                getStatusTextColor(currentStatus);
+                              const statusBorderColor =
+                                getStatusBorderColor(currentStatus);
 
                               return (
                                 <td
                                   key={day + start}
                                   style={{
                                     height: 80,
-                                    background: bgColor,
-                                    color: textColor,
+                                    background: statusBgColor,
+                                    color: statusTextColor,
                                     padding: "8px",
-                                    border: "2px solid #F8FAFC",
+                                    border: `2px solid ${statusBorderColor}`,
                                     transition: "all 0.2s",
                                     cursor: sec ? "pointer" : "default",
+                                    position: "relative",
                                   }}
                                   onMouseEnter={(e) => {
                                     if (sec)
@@ -771,14 +1024,80 @@ export default function LoadCommitteeDashboard() {
                                         className="fw-bold mb-1"
                                         style={{ fontSize: "0.9rem" }}
                                       >
-                                        {sec.course_code}
+                                        {sec.course_code} {sec.type}
                                       </div>
                                       <small className="opacity-90">
-                                        {sec.type} • {sec.room_name}
-                                      </small>
-                                      <small className="opacity-90 mt-1">
+                                        {sec.room_name} •{" "}
                                         {sec.faculty_name || "Unassigned"}
                                       </small>
+                                      <div className="d-flex align-items-center gap-1 mt-1">
+                                        <small
+                                          className="fw-bold"
+                                          style={{
+                                            fontSize: "0.7rem",
+                                          }}
+                                        >
+                                          {currentStatus}
+                                        </small>
+                                        <Dropdown drop="up">
+                                          <Dropdown.Toggle
+                                            variant="link"
+                                            size="sm"
+                                            disabled={updatingStatus === sec.id}
+                                            style={{
+                                              color: statusTextColor,
+                                              border: "none",
+                                              padding: "1px",
+                                              background: "transparent",
+                                              opacity: 0.7,
+                                            }}
+                                          >
+                                            {updatingStatus === sec.id ? (
+                                              <Spinner
+                                                animation="border"
+                                                size="sm"
+                                              />
+                                            ) : (
+                                              <FaEdit size={10} />
+                                            )}
+                                          </Dropdown.Toggle>
+
+                                          <Dropdown.Menu
+                                            style={{ zIndex: 9999 }}
+                                          >
+                                            <Dropdown.Header>
+                                              Change Status
+                                            </Dropdown.Header>
+                                            {Object.keys(STATUS_CONFIG).map(
+                                              (status) => (
+                                                <Dropdown.Item
+                                                  key={status}
+                                                  onClick={() =>
+                                                    updateSectionStatus(
+                                                      sec.id,
+                                                      status
+                                                    )
+                                                  }
+                                                  style={{
+                                                    color:
+                                                      STATUS_CONFIG[status]
+                                                        .textColor,
+                                                    background:
+                                                      currentStatus === status
+                                                        ? STATUS_CONFIG[status]
+                                                            .bgColor
+                                                        : "transparent",
+                                                  }}
+                                                >
+                                                  {status}
+                                                  {currentStatus === status &&
+                                                    " ✓"}
+                                                </Dropdown.Item>
+                                              )
+                                            )}
+                                          </Dropdown.Menu>
+                                        </Dropdown>
+                                      </div>
                                     </div>
                                   ) : (
                                     <span className="text-muted">-</span>

@@ -4,9 +4,10 @@ import { FaEdit, FaSave } from "react-icons/fa";
 import apiClient from "../../Services/apiClient";
 import RegistrarNavbar from "./RegistrarNavbar";
 import { useToast } from "../../Hooks/ToastContext";
+import { useSharedMap } from "../../Hooks/useSharedMap"; // 🟣 shared state hook
 
 export default function RegistrarCourseEnrollmentPage() {
-  const { success, error, warning, info } = useToast();
+  const { success, error } = useToast();
   const [courses, setCourses] = useState([]);
   const [levels, setLevels] = useState([]);
   const [selectedLevel, setSelectedLevel] = useState("");
@@ -14,7 +15,20 @@ export default function RegistrarCourseEnrollmentPage() {
   const [editingId, setEditingId] = useState(null);
   const [expectedInput, setExpectedInput] = useState({});
 
-  // 🟣 Load levels for filtering
+  // 🟣 Connect to Y.js shared map for real-time synchronization
+  const { data: sharedData, updateField } = useSharedMap("course_enrollment");
+
+  // 🟣 Watch for incoming Y.js updates from other users
+  useEffect(() => {
+    if (!sharedData?.lastChange) return;
+    const { type } = sharedData.lastChange;
+    console.log("📨 Yjs update received:", sharedData.lastChange);
+    if (type === "reload") {
+      fetchCourses(selectedLevel);
+    }
+  }, [sharedData]);
+
+  // 🟢 Load levels for filtering
   const fetchLevels = async () => {
     try {
       const res = await apiClient.get("/dropdowns/levels");
@@ -25,17 +39,13 @@ export default function RegistrarCourseEnrollmentPage() {
     }
   };
 
-  // 🟢 Load courses with optional level filter
+  // 🟢 Load courses (optionally filtered by level)
   const fetchCourses = async (levelId = "") => {
     setLoading(true);
     try {
       const params = {};
-      if (levelId) {
-        params.level_id = levelId;
-      }
-      
+      if (levelId) params.level_id = levelId;
       console.log("Fetching courses with params:", params);
-      
       const res = await apiClient.get("/courses", { params });
       console.log("Courses response:", res.data);
       setCourses(res.data);
@@ -78,9 +88,13 @@ export default function RegistrarCourseEnrollmentPage() {
       await apiClient.put(`/courses/${courseId}/expected-students`, {
         expected_students: Number(expected),
       });
+
       setEditingId(null);
       success("Expected students count updated successfully");
       fetchCourses(selectedLevel);
+
+      // 🟣 Broadcast update to all users
+      updateField("lastChange", { type: "reload", timestamp: Date.now() });
     } catch (err) {
       error("Failed to update expected students count");
       console.error(err);
@@ -113,10 +127,10 @@ export default function RegistrarCourseEnrollmentPage() {
         </Form.Select>
       </div>
 
-      {/* Debug info */}
       <div className="mb-2 text-muted small">
-        Showing courses for: {selectedLevel ? `Level ${selectedLevel}` : 'All Levels'} 
-        ({courses.length} courses found)
+        Showing courses for:{" "}
+        {selectedLevel ? `Level ${selectedLevel}` : "All Levels"} (
+        {courses.length} courses found)
       </div>
 
       {/* Table */}

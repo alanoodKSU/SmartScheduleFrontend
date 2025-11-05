@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from "react";
-import { Table, Spinner, Card, Form, Button, Badge } from "react-bootstrap";
+import { Table, Spinner, Card, Form, Button, Badge, InputGroup } from "react-bootstrap";
 import {
   FaTable,
   FaFilter,
   FaSync,
   FaCalendarAlt,
   FaUsers,
+  FaSearch,
 } from "react-icons/fa";
 import apiClient from "../../Services/apiClient";
 import StudentNavbar from "./StudentNavbar"; // ✅ Navbar
@@ -32,12 +33,14 @@ const COURSE_COLORS = {
 
 export default function AllLevelsSchedulePage() {
   const [sections, setSections] = useState([]);
+  const [filteredSections, setFilteredSections] = useState([]);
   const [levels, setLevels] = useState([]);
   const [groups, setGroups] = useState([]); // 🆕 Groups
   const [selectedLevel, setSelectedLevel] = useState("");
   const [selectedGroup, setSelectedGroup] = useState(""); // 🆕 Group filter
   const [loading, setLoading] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
 
   // 🟢 Load levels
   const fetchLevels = async () => {
@@ -80,6 +83,7 @@ export default function AllLevelsSchedulePage() {
 
       const { data } = await apiClient.get("/sections", { params });
       setSections(data);
+      setFilteredSections(data);
     } catch (err) {
       console.error("Failed to load sections:", err);
     } finally {
@@ -96,8 +100,25 @@ export default function AllLevelsSchedulePage() {
     fetchSections();
   }, [selectedLevel, selectedGroup]); // 🆕 Reload when group changes
 
+  // 🔍 Filter by search term
+  useEffect(() => {
+    if (!searchTerm) {
+      setFilteredSections(sections);
+      return;
+    }
+
+    const lower = searchTerm.toLowerCase();
+    const filtered = sections.filter(
+      (s) =>
+        s.course_name?.toLowerCase().includes(lower) ||
+        s.course_code?.toLowerCase().includes(lower) ||
+        s.faculty_name?.toLowerCase().includes(lower)
+    );
+    setFilteredSections(filtered);
+  }, [searchTerm, sections]);
+
   const grid = {};
-  for (const s of sections) {
+  for (const s of filteredSections) {
     if (!grid[s.day]) grid[s.day] = {};
     grid[s.day][s.start_time_hhmm] = s;
   }
@@ -219,6 +240,34 @@ export default function AllLevelsSchedulePage() {
                   </Form.Group>
                 )}
 
+                {/* 🔍 Search Bar */}
+                <Form.Group className="mb-4">
+                  <Form.Label className="small fw-semibold text-gray-700">
+                    <FaSearch className="me-2" />
+                    Search Course / Faculty
+                  </Form.Label>
+                  <InputGroup>
+                    <Form.Control
+                      type="text"
+                      placeholder="Type course or faculty name..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      style={{ borderRadius: "8px" }}
+                    />
+                  </InputGroup>
+                  {searchTerm && (
+                    <Button
+                      variant="outline-secondary"
+                      size="sm"
+                      className="w-100 mt-2"
+                      onClick={() => setSearchTerm("")}
+                      style={{ borderRadius: "8px" }}
+                    >
+                      Clear Search
+                    </Button>
+                  )}
+                </Form.Group>
+
                 {/* Level Info */}
                 {selectedLevel && (
                   <Card
@@ -245,15 +294,18 @@ export default function AllLevelsSchedulePage() {
                         <div className="d-flex justify-content-around mt-3">
                           <div>
                             <div className="h4 fw-bold mb-1">
-                              {sections.length}
+                              {filteredSections.length}
                             </div>
                             <div className="small opacity-90">Sections</div>
                           </div>
                           <div>
                             <div className="h4 fw-bold mb-1">
                               {
-                                [...new Set(sections.map((s) => s.course_code))]
-                                  .length
+                                [
+                                  ...new Set(
+                                    filteredSections.map((s) => s.course_code)
+                                  ),
+                                ].length
                               }
                             </div>
                             <div className="small opacity-90">Courses</div>
@@ -312,6 +364,7 @@ export default function AllLevelsSchedulePage() {
                     </h4>
                     <p className="text-muted mb-0">
                       Visual weekly timetable view
+                      {searchTerm && ` • Searching: "${searchTerm}"`}
                     </p>
                   </div>
 
@@ -343,11 +396,11 @@ export default function AllLevelsSchedulePage() {
                     <Spinner animation="border" variant="primary" />
                     <p className="text-muted mt-2">Loading schedule data...</p>
                   </div>
-                ) : sections.length === 0 ? (
+                ) : filteredSections.length === 0 ? (
                   <div className="text-center py-5">
-                    <h5>No sections found</h5>
+                    <h5>No matching sections</h5>
                     <p className="text-muted">
-                      No schedule for this level or group
+                      Try adjusting your filters or search term
                     </p>
                   </div>
                 ) : showDetails ? (
@@ -372,7 +425,7 @@ export default function AllLevelsSchedulePage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {sections.map((s) => (
+                        {filteredSections.map((s) => (
                           <tr key={s.id}>
                             <td>
                               {s.course_code} - {s.course_name}

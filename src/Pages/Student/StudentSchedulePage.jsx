@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { Table, Spinner, Card, Badge } from "react-bootstrap";
-import { FaBell, FaTable, FaCalendarAlt, FaUserGraduate } from "react-icons/fa";
+import { Table, Spinner, Card, Badge, Form, InputGroup, Button } from "react-bootstrap";
+import { FaBell, FaTable, FaCalendarAlt, FaUserGraduate, FaSearch } from "react-icons/fa";
 import apiClient from "../../Services/apiClient";
 import StudentLinksBar from "./StudentNavbar";
 import { useAuth } from "../../Hooks/AuthContext"; // Import auth context
@@ -27,17 +27,17 @@ const COURSE_COLORS = {
 
 export default function StudentSchedulePage() {
   const [sections, setSections] = useState([]);
+  const [filteredSections, setFilteredSections] = useState([]);
   const [loading, setLoading] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [studentInfo, setStudentInfo] = useState(null);
+  const [searchTerm, setSearchTerm] = useState("");
 
-  // ✅ CORRECT: Get user from auth context
   const { user } = useAuth();
   const userId = user?.id;
 
   useEffect(() => {
     const fetchSchedule = async () => {
-      // ✅ Check if userId is available
       if (!userId) {
         console.log("Waiting for user ID...");
         return;
@@ -48,6 +48,7 @@ export default function StudentSchedulePage() {
         console.log("🔍 Fetching schedule for user ID:", userId);
         const { data } = await apiClient.get(`/sections/schedule/${userId}`);
         setSections(data.sections);
+        setFilteredSections(data.sections);
         setStudentInfo(data.student);
       } catch (err) {
         console.error("Failed to load schedule", err);
@@ -57,10 +58,27 @@ export default function StudentSchedulePage() {
     };
 
     fetchSchedule();
-  }, [userId]); // ✅ Add userId as dependency
+  }, [userId]);
+
+  // 🟣 Filter sections by search term
+  useEffect(() => {
+    if (!searchTerm) {
+      setFilteredSections(sections);
+      return;
+    }
+
+    const lower = searchTerm.toLowerCase();
+    const filtered = sections.filter(
+      (s) =>
+        s.course_name?.toLowerCase().includes(lower) ||
+        s.course_code?.toLowerCase().includes(lower) ||
+        s.faculty_name?.toLowerCase().includes(lower)
+    );
+    setFilteredSections(filtered);
+  }, [searchTerm, sections]);
 
   const grid = {};
-  for (const s of sections) {
+  for (const s of filteredSections) {
     if (!grid[s.day]) grid[s.day] = {};
     grid[s.day][s.start_time_hhmm] = s;
   }
@@ -86,7 +104,6 @@ export default function StudentSchedulePage() {
     return baseColor;
   };
 
-  // 🎨 Get complementary text color
   const getTextColor = (bgColor) => {
     const color = bgColor.replace("#", "");
     const r = parseInt(color.substr(0, 2), 16);
@@ -138,14 +155,14 @@ export default function StudentSchedulePage() {
                         <div className="d-flex justify-content-around">
                           <div className="text-center">
                             <div className="h5 fw-bold mb-1">
-                              {sections.length}
+                              {filteredSections.length}
                             </div>
                             <div className="small opacity-90">Sections</div>
                           </div>
                           <div className="text-center">
                             <div className="h5 fw-bold mb-1">
                               {
-                                [...new Set(sections.map((s) => s.course_code))]
+                                [...new Set(filteredSections.map((s) => s.course_code))]
                                   .length
                               }
                             </div>
@@ -157,16 +174,35 @@ export default function StudentSchedulePage() {
                   </Card>
                 )}
 
-                {/* Show loading if no user ID */}
-                {!userId && (
-                  <div className="text-center py-3">
-                    <Spinner animation="border" size="sm" variant="primary" />
-                    <div className="small text-muted mt-2">
-                      Loading user data...
-                    </div>
-                  </div>
-                )}
+                {/* 🔍 Search Bar */}
+                <Form.Group className="mb-4">
+                  <Form.Label className="small fw-semibold text-gray-700">
+                    <FaSearch className="me-2" />
+                    Search Course / Faculty
+                  </Form.Label>
+                  <InputGroup>
+                    <Form.Control
+                      type="text"
+                      placeholder="Type course or faculty name..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      style={{ borderRadius: "8px" }}
+                    />
+                  </InputGroup>
+                  {searchTerm && (
+                    <Button
+                      variant="outline-secondary"
+                      size="sm"
+                      className="w-100 mt-2"
+                      onClick={() => setSearchTerm("")}
+                      style={{ borderRadius: "8px" }}
+                    >
+                      Clear Search
+                    </Button>
+                  )}
+                </Form.Group>
 
+                {/* 🔔 Notifications Header */}
                 <div className="d-flex align-items-center mb-4">
                   <div
                     style={{
@@ -179,69 +215,13 @@ export default function StudentSchedulePage() {
                     <FaBell size={20} color="white" />
                   </div>
                   <div>
-                    <h6 className="fw-bold mb-0 text-gray-800">
-                      Notifications
-                    </h6>
+                    <h6 className="fw-bold mb-0 text-gray-800">Notifications</h6>
                     <small className="text-muted">Latest updates</small>
                   </div>
                 </div>
 
-                <div
-                  className="d-flex flex-column gap-3"
-                  style={{ maxHeight: "400px", overflowY: "auto" }}
-                >
-                  <div
-                    className="p-3 rounded-3"
-                    style={{
-                      background: "linear-gradient(135deg, #EEF2FF, #E0E7FF)",
-                      borderLeft: "4px solid #6366F1",
-                    }}
-                  >
-                    <strong className="text-gray-800">Schedule Released</strong>
-                    <p className="mb-0 small text-muted mt-1">
-                      You can now view your assigned schedule and sections.
-                    </p>
-                  </div>
-
-                  <div
-                    className="p-3 rounded-3"
-                    style={{
-                      background: "linear-gradient(135deg, #DBEAFE, #E0F2FE)",
-                      borderLeft: "4px solid #3B82F6",
-                    }}
-                  >
-                    <strong className="text-gray-800">Update Notice</strong>
-                    <p className="mb-0 small text-muted mt-1">
-                      MATH 151 lecture room changed to 402.
-                    </p>
-                  </div>
-
-                  <div
-                    className="p-3 rounded-3"
-                    style={{
-                      background: "linear-gradient(135deg, #FEF3C7, #FDE68A)",
-                      borderLeft: "4px solid #F59E0B",
-                    }}
-                  >
-                    <strong className="text-gray-800">Reminder</strong>
-                    <p className="mb-0 small text-muted mt-1">
-                      Submit elective preferences before Oct 20.
-                    </p>
-                  </div>
-
-                  <div
-                    className="p-3 rounded-3"
-                    style={{
-                      background: "linear-gradient(135deg, #D1FAE5, #A7F3D0)",
-                      borderLeft: "4px solid #10B981",
-                    }}
-                  >
-                    <strong className="text-gray-800">Welcome Back!</strong>
-                    <p className="mb-0 small text-muted mt-1">
-                      New semester starts next week. Check your schedule.
-                    </p>
-                  </div>
-                </div>
+                {/* 📨 Dynamic Notifications */}
+                <NotificationsList userRole={user?.role} />
               </Card.Body>
             </Card>
           </div>
@@ -259,7 +239,6 @@ export default function StudentSchedulePage() {
               }}
             >
               <Card.Body className="p-4">
-                {/* Show message if no user ID */}
                 {!userId && (
                   <div className="text-center py-5">
                     <div className="text-warning mb-3">
@@ -312,13 +291,14 @@ export default function StudentSchedulePage() {
                           {showDetails
                             ? "Detailed section information"
                             : "Visual weekly timetable view"}
+                          {searchTerm && ` • Searching: "${searchTerm}"`}
                         </p>
                       </div>
 
                       <button
                         className="btn px-4 py-2"
                         onClick={() => setShowDetails((prev) => !prev)}
-                        disabled={sections.length === 0}
+                        disabled={filteredSections.length === 0}
                         style={{
                           borderRadius: "12px",
                           background: showDetails
@@ -327,7 +307,7 @@ export default function StudentSchedulePage() {
                           color: "white",
                           border: "none",
                           fontWeight: "600",
-                          opacity: sections.length === 0 ? 0.6 : 1,
+                          opacity: filteredSections.length === 0 ? 0.6 : 1,
                         }}
                       >
                         {showDetails ? "📅 Weekly View" : "📊 Table View"}
@@ -349,7 +329,7 @@ export default function StudentSchedulePage() {
                           Loading your schedule...
                         </div>
                       </div>
-                    ) : sections.length === 0 ? (
+                    ) : filteredSections.length === 0 ? (
                       <div className="text-center py-5">
                         <div
                           style={{
@@ -367,92 +347,89 @@ export default function StudentSchedulePage() {
                           <FaCalendarAlt size={32} color="white" />
                         </div>
                         <h5 className="text-gray-700 mb-2">
-                          No Schedule Found
+                          No Matching Sections
                         </h5>
                         <p className="text-muted">
-                          No schedule sections found for your account. <br />
-                          Check back later for schedule updates.
+                          Try adjusting your search term.
                         </p>
                       </div>
                     ) : showDetails ? (
                       // 🔹 Schedule Details Table
                       <div className="table-responsive">
                         <Table
-  hover
-  className="align-middle"
-  style={{ borderRadius: "12px", overflow: "hidden" }}
->
-  <thead
-    style={{
-      background: "linear-gradient(135deg, #6366F1, #8B5CF6)",
-      color: "white",
-    }}
-  >
-    <tr>
-      <th className="py-3">Course</th>
-      <th className="py-3">Section</th>
-      <th className="py-3">Type</th>
-     
-      <th className="py-3">Day</th>
-      <th className="py-3">Time</th>
-      <th className="py-3">Faculty</th>
-      <th className="py-3">Room</th>
-    </tr>
-  </thead>
-  <tbody>
-    {sections.map((s) => {
-      const bgColor = colorForCourse(s.course_code, s.type);
-      const textColor = getTextColor(bgColor);
+                          hover
+                          className="align-middle"
+                          style={{ borderRadius: "12px", overflow: "hidden" }}
+                        >
+                          <thead
+                            style={{
+                              background:
+                                "linear-gradient(135deg, #6366F1, #8B5CF6)",
+                              color: "white",
+                            }}
+                          >
+                            <tr>
+                              <th>Course</th>
+                              <th>Section</th>
+                              <th>Type</th>
+                              <th>Day</th>
+                              <th>Time</th>
+                              <th>Faculty</th>
+                              <th>Room</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filteredSections.map((s) => {
+                              const bgColor = colorForCourse(
+                                s.course_code,
+                                s.type
+                              );
+                              const textColor = getTextColor(bgColor);
 
-      return (
-        <tr key={s.id} style={{ transition: "all 0.2s" }}>
-          <td className="fw-bold py-3" style={{ color: "#6366F1" }}>
-            {s.course_code}
-          </td>
-          
-         
-          {/* ✅ Show Section Number Instead of ID */}
-          <td className="py-3">
-            <small className="text-muted">#{s.section_number}</small>
-          </td>
-           <td className="py-3">
-            <Badge
-              style={{
-                background:
-                  s.type === "lab"
-                    ? "linear-gradient(135deg, #F59E0B, #EAB308)"
-                    : "linear-gradient(135deg, #06B6D4, #0EA5E9)",
-                color: "white",
-                border: "none",
-                padding: "6px 12px",
-                borderRadius: "20px",
-              }}
-            >
-              {s.type}
-            </Badge>
-          </td>
-          <td className="py-3 fw-semibold">{s.day}</td>
-          <td className="py-3">
-            <span
-              style={{
-                color: "#6366F1",
-                fontWeight: "600",
-              }}
-            >
-              {s.start_time_hhmm} - {s.end_time_hhmm}
-            </span>
-          </td>
-          <td className="py-3">{s.faculty_name || "-"}</td>
-          <td className="py-3">{s.room_name || "-"}</td>
-        </tr>
-      );
-    })}
-  </tbody>
-</Table>
-
+                              return (
+                                <tr key={s.id}>
+                                  <td className="fw-bold" style={{ color: "#6366F1" }}>
+                                    {s.course_code}
+                                  </td>
+                                  <td>
+                                    <small className="text-muted">
+                                      #{s.section_number}
+                                    </small>
+                                  </td>
+                                  <td>
+                                    <Badge
+                                      style={{
+                                        background:
+                                          s.type === "lab"
+                                            ? "linear-gradient(135deg, #F59E0B, #EAB308)"
+                                            : "linear-gradient(135deg, #06B6D4, #0EA5E9)",
+                                        color: "white",
+                                        borderRadius: "20px",
+                                        padding: "6px 12px",
+                                      }}
+                                    >
+                                      {s.type}
+                                    </Badge>
+                                  </td>
+                                  <td>{s.day}</td>
+                                  <td>
+                                    <span
+                                      style={{
+                                        color: "#6366F1",
+                                        fontWeight: "600",
+                                      }}
+                                    >
+                                      {s.start_time_hhmm} - {s.end_time_hhmm}
+                                    </span>
+                                  </td>
+                                  <td>{s.faculty_name || "-"}</td>
+                                  <td>{s.room_name || "-"}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </Table>
                       </div>
-
-                      
                     ) : (
                       // 🔹 Weekly Schedule Table
                       <div className="table-responsive">
@@ -469,13 +446,9 @@ export default function StudentSchedulePage() {
                             }}
                           >
                             <tr>
-                              <th style={{ width: 120, padding: "16px" }}>
-                                Time
-                              </th>
+                              <th style={{ width: 120 }}>Time</th>
                               {DAYS.map((d) => (
-                                <th key={d} style={{ padding: "16px" }}>
-                                  {d}
-                                </th>
+                                <th key={d}>{d}</th>
                               ))}
                             </tr>
                           </thead>
@@ -487,7 +460,6 @@ export default function StudentSchedulePage() {
                                   style={{
                                     background:
                                       "linear-gradient(135deg, #F8FAFC, #F1F5F9)",
-                                    padding: "16px",
                                     color: "#475569",
                                   }}
                                 >
@@ -507,34 +479,19 @@ export default function StudentSchedulePage() {
                                         height: 80,
                                         background: bgColor,
                                         color: textColor,
-                                        padding: "8px",
                                         border: "2px solid #F8FAFC",
-                                        transition: "all 0.2s",
-                                        cursor: sec ? "pointer" : "default",
-                                      }}
-                                      onMouseEnter={(e) => {
-                                        if (sec)
-                                          e.target.style.transform =
-                                            "scale(1.02)";
-                                      }}
-                                      onMouseLeave={(e) => {
-                                        if (sec)
-                                          e.target.style.transform = "scale(1)";
                                       }}
                                     >
                                       {sec ? (
-                                        <div className="d-flex flex-column align-items-center justify-content-center h-100">
-                                          <div
-                                            className="fw-bold mb-1"
-                                            style={{ fontSize: "0.9rem" }}
-                                          >
+                                        <div>
+                                          <div className="fw-bold mb-1">
                                             {sec.course_code}
                                           </div>
                                           <small className="opacity-90">
                                             {sec.type} • {sec.room_name}
                                           </small>
                                           {sec.faculty_name && (
-                                            <small className="opacity-90 mt-1">
+                                            <small className="opacity-90 mt-1 d-block">
                                               {sec.faculty_name}
                                             </small>
                                           )}
@@ -558,6 +515,81 @@ export default function StudentSchedulePage() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ============================================================
+// 📨 Notification Component
+// ============================================================
+function NotificationsList({ userRole }) {
+  const [notifications, setNotifications] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!userRole) return;
+    const fetchNotifications = async () => {
+      setLoading(true);
+      try {
+        const { data } = await apiClient.get(`/notifications`, {
+          params: { role: userRole, t: Date.now() },
+          headers: { "Cache-Control": "no-cache" },
+        });
+        setNotifications(data);
+      } catch (err) {
+        console.error("❌ Error loading notifications:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchNotifications();
+  }, [userRole]);
+
+  if (loading) {
+    return (
+      <div className="text-center py-3">
+        <Spinner animation="border" size="sm" variant="primary" />
+        <div className="small text-muted mt-2">Loading notifications...</div>
+      </div>
+    );
+  }
+
+  if (notifications.length === 0) {
+    return (
+      <div className="text-center text-muted small">
+        No notifications found
+      </div>
+    );
+  }
+
+  const typeColors = {
+    schedule: { bg: "linear-gradient(135deg, #EEF2FF, #E0E7FF)", border: "#6366F1" },
+    update: { bg: "linear-gradient(135deg, #DBEAFE, #E0F2FE)", border: "#3B82F6" },
+    reminder: { bg: "linear-gradient(135deg, #FEF3C7, #FDE68A)", border: "#F59E0B" },
+    general: { bg: "linear-gradient(135deg, #D1FAE5, #A7F3D0)", border: "#10B981" },
+  };
+
+  return (
+    <div
+      className="d-flex flex-column gap-3"
+      style={{ maxHeight: "400px", overflowY: "auto" }}
+    >
+      {notifications.map((n) => {
+        const colorSet = typeColors[n.type] || typeColors.general;
+        return (
+          <div
+            key={n.id}
+            className="p-3 rounded-3"
+            style={{
+              background: colorSet.bg,
+              borderLeft: `4px solid ${colorSet.border}`,
+            }}
+          >
+            <strong className="text-gray-800">{n.title}</strong>
+            <p className="mb-0 small text-muted mt-1">{n.body}</p>
+          </div>
+        );
+      })}
     </div>
   );
 }

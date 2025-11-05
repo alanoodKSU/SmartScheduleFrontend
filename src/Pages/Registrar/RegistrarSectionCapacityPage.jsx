@@ -4,6 +4,7 @@ import { FaEdit, FaSave } from "react-icons/fa";
 import apiClient from "../../Services/apiClient";
 import RegistrarNavbar from "./RegistrarNavbar";
 import { useToast } from "../../Hooks/ToastContext";
+import { useSharedMap } from "../../Hooks/useSharedMap"; // 🟣 for real-time sync
 
 export default function RegistrarSectionCapacityPage() {
   const { success, error, warning } = useToast();
@@ -14,7 +15,22 @@ export default function RegistrarSectionCapacityPage() {
   const [editingId, setEditingId] = useState(null);
   const [capacityInput, setCapacityInput] = useState({});
 
-  // 🟣 Load levels for filter dropdown
+  // 🟣 Connect to Y.js shared map for collaborative updates
+  const { data: sharedData, updateField } = useSharedMap("section_capacity");
+
+  // 🟣 Listen for real-time updates from other users
+  useEffect(() => {
+    if (!sharedData?.lastChange) return;
+    const { type } = sharedData.lastChange;
+
+    console.log("📨 Yjs update received:", sharedData.lastChange);
+
+    if (type === "reload") {
+      fetchSections();
+    }
+  }, [sharedData]);
+
+  // 🟢 Load levels for filter dropdown
   const fetchLevels = async () => {
     try {
       const res = await apiClient.get("/dropdowns/levels");
@@ -76,6 +92,9 @@ export default function RegistrarSectionCapacityPage() {
       setEditingId(null);
       success("Section capacity updated successfully");
       fetchSections();
+
+      // 🟣 Broadcast change to all other connected clients
+      updateField("lastChange", { type: "reload", timestamp: Date.now() });
     } catch (err) {
       error("Failed to update section capacity");
       console.error(err);
@@ -156,7 +175,7 @@ export default function RegistrarSectionCapacityPage() {
                     )}
                   </td>
 
-                  {/* 🟣 Course Name */}
+                  {/* Course Name */}
                   <td>
                     <div className="fw-semibold">{s.course_code || "—"}</div>
                     <div className="text-muted small">{s.course_name}</div>

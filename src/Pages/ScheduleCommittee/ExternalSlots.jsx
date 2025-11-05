@@ -4,10 +4,12 @@ import { FaEdit, FaTrashAlt } from "react-icons/fa";
 import { Modal, Button } from "react-bootstrap";
 import apiClient from "../../Services/apiClient";
 import ScheduleCommitteeNavbar from "./ScheduleCommitteeNavbar";
-import { useToast } from "../../Hooks/ToastContext"; // Fixed import path
+import { useToast } from "../../Hooks/ToastContext";
+import { useSharedMap } from "../../Hooks/useSharedMap"; // 🟣 added real-time collaboration
 
 export default function ExternalSlots() {
-  const { success, error, warning, info } = useToast(); // Destructure the functions
+  const { success, error, warning, info } = useToast();
+  const { data: sharedData, updateField } = useSharedMap("external_slots"); // 🟣 shared Yjs doc
 
   const [formData, setFormData] = useState({
     course_id: "",
@@ -39,6 +41,14 @@ export default function ExternalSlots() {
     loadSlots();
   }, []);
 
+  // 🟣 real-time updates from Y.js
+  useEffect(() => {
+    if (!sharedData?.lastChange) return;
+    const { type } = sharedData.lastChange;
+    console.log("📡 External slots change:", type);
+    if (["created", "updated", "deleted"].includes(type)) loadSlots();
+  }, [sharedData]);
+
   const loadDropdowns = async () => {
     try {
       const [lvl, crs, fac, rms] = await Promise.all([
@@ -53,7 +63,7 @@ export default function ExternalSlots() {
       setRooms(rms.data);
     } catch (e) {
       console.error("Dropdown load failed", e);
-      error("❌ Failed to load dropdown data"); // Fixed: use error function directly
+      error("❌ Failed to load dropdown data");
     }
   };
 
@@ -64,7 +74,9 @@ export default function ExternalSlots() {
         setStudents(data || []);
       } else {
         const ids = levelIds.join(",");
-        const { data } = await apiClient.get(`/dropdowns/students?level_id=${ids}`);
+        const { data } = await apiClient.get(
+          `/dropdowns/students?level_id=${ids}`
+        );
         setStudents(data || []);
       }
     } catch (error) {
@@ -79,7 +91,7 @@ export default function ExternalSlots() {
       setSlots(res.data);
     } catch (e) {
       console.error("Failed to load external slots", e);
-      error("❌ Failed to load external slots"); // Fixed: use error function directly
+      error("❌ Failed to load external slots");
     }
   };
 
@@ -132,11 +144,13 @@ export default function ExternalSlots() {
 
       if (editingSlot) {
         await apiClient.put(`/sections/${editingSlot.id}`, payload);
-        success("✅ Slot updated successfully!"); // Fixed: use success function directly
+        success("✅ Slot updated successfully!");
+        updateField("lastChange", { type: "updated", timestamp: Date.now() }); // 🟣 notify others
         setShowEditModal(false);
       } else {
         await apiClient.post("/sections", payload);
-        success("✅ Slot created successfully!"); // Fixed: use success function directly
+        success("✅ Slot created successfully!");
+        updateField("lastChange", { type: "created", timestamp: Date.now() }); // 🟣 notify others
       }
 
       await loadSlots();
@@ -147,7 +161,7 @@ export default function ExternalSlots() {
         error.response?.data?.message ||
         error.message;
       setErr(msg);
-      error(`❌ ${msg}`); // Fixed: use error function directly
+      error(`❌ ${msg}`);
     } finally {
       setLoading(false);
     }
@@ -155,12 +169,12 @@ export default function ExternalSlots() {
 
   const handleEdit = (slot) => {
     setEditingSlot(slot);
-    
+
     // Find the actual course, faculty, and room IDs
     const course = courses.find((c) => c.code === slot.course_code);
     const facultyMember = faculty.find((f) => f.name === slot.faculty_name);
     const room = rooms.find((r) => r.name === slot.room_name);
-    
+
     // Parse level names to level IDs
     const levelOptions = slot.level_names
       .split(", ")
@@ -191,22 +205,24 @@ export default function ExternalSlots() {
     }
 
     setShowEditModal(true);
-    info("✏️ Editing mode activated"); // Fixed: use info function directly
+    info("✏️ Editing mode activated");
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this external slot?")) return;
+    if (!window.confirm("Are you sure you want to delete this external slot?"))
+      return;
 
     try {
       await apiClient.delete(`/sections/${id}`);
-      success("🗑️ Slot deleted successfully"); // Fixed: use success function directly
+      success("🗑️ Slot deleted successfully");
       await loadSlots();
+      updateField("lastChange", { type: "deleted", timestamp: Date.now() }); // 🟣 notify others
     } catch (error) {
       const msg =
         error.response?.data?.error ||
         error.response?.data?.message ||
         error.message;
-      error(`❌ Failed to delete slot: ${msg}`); // Fixed: use error function directly
+      error(`❌ Failed to delete slot: ${msg}`);
     }
   };
 
@@ -328,9 +344,7 @@ export default function ExternalSlots() {
               <label className="form-label">Day</label>
               <Select
                 options={selectOptions.days}
-                value={selectOptions.days.find(
-                  (o) => o.value === formData.day
-                )}
+                value={selectOptions.days.find((o) => o.value === formData.day)}
                 onChange={(opt) => handleChange("day", opt?.value || "")}
                 placeholder="Select day…"
                 isSearchable
@@ -509,7 +523,7 @@ export default function ExternalSlots() {
           <Modal.Body>
             <form onSubmit={handleSubmit}>
               {err && <div className="alert alert-danger">{err}</div>}
-              
+
               <div className="row g-3">
                 {/* Course */}
                 <div className="col-md-6">
@@ -519,7 +533,9 @@ export default function ExternalSlots() {
                     value={selectOptions.courses.find(
                       (o) => o.value === formData.course_id
                     )}
-                    onChange={(opt) => handleChange("course_id", opt?.value || "")}
+                    onChange={(opt) =>
+                      handleChange("course_id", opt?.value || "")
+                    }
                     placeholder="Select course…"
                     isSearchable
                     filterOption={customFilterOption}
@@ -548,7 +564,9 @@ export default function ExternalSlots() {
                     value={selectOptions.faculty.find(
                       (o) => o.value === formData.faculty_id
                     )}
-                    onChange={(opt) => handleChange("faculty_id", opt?.value || "")}
+                    onChange={(opt) =>
+                      handleChange("faculty_id", opt?.value || "")
+                    }
                     placeholder="Select instructor…"
                     isSearchable
                     filterOption={customFilterOption}
@@ -563,7 +581,9 @@ export default function ExternalSlots() {
                     value={selectOptions.rooms.find(
                       (o) => o.value === formData.room_id
                     )}
-                    onChange={(opt) => handleChange("room_id", opt?.value || "")}
+                    onChange={(opt) =>
+                      handleChange("room_id", opt?.value || "")
+                    }
                     placeholder="Select room…"
                     isSearchable
                     filterOption={customFilterOption}

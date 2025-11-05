@@ -2,7 +2,8 @@ import React, { useEffect, useState } from "react";
 import apiClient from "../../Services/apiClient";
 import { Modal, Button, Form } from "react-bootstrap";
 import { FaEdit, FaTrashAlt, FaPlusCircle } from "react-icons/fa";
-import Navbar from "./ScheduleCommitteeNavbar"; // 🟣 import your Navbar
+import Navbar from "./ScheduleCommitteeNavbar";
+import { useSharedMap } from "../../Hooks/useSharedMap"; // 🟣 new import
 
 export default function RulesPage() {
   const [rules, setRules] = useState([]);
@@ -16,6 +17,9 @@ export default function RulesPage() {
     type: "manual",
   });
 
+  // 🟣 shared map for real-time sync
+  const { data: sharedData, updateField } = useSharedMap("committee_rules");
+
   const loadRules = async () => {
     try {
       const res = await apiClient.get("/committee/rules");
@@ -28,6 +32,14 @@ export default function RulesPage() {
   useEffect(() => {
     loadRules();
   }, []);
+
+  // 🟣 Listen for remote changes
+  useEffect(() => {
+    if (!sharedData?.lastChange) return;
+    const { type } = sharedData.lastChange;
+    console.log("📡 RulesPage update:", type);
+    if (["created", "updated", "deleted", "toggled"].includes(type)) loadRules();
+  }, [sharedData]);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -59,7 +71,13 @@ export default function RulesPage() {
   const handleSave = async () => {
     try {
       const payload = { ...form, value: JSON.parse(form.value || "{}") };
-      await apiClient.post("/committee/rules", payload);
+      if (editingRule) {
+        await apiClient.put(`/committee/rules/${editingRule.id}`, payload);
+        updateField("lastChange", { type: "updated", timestamp: Date.now() });
+      } else {
+        await apiClient.post("/committee/rules", payload);
+        updateField("lastChange", { type: "created", timestamp: Date.now() });
+      }
       setShowModal(false);
       loadRules();
     } catch (err) {
@@ -72,6 +90,7 @@ export default function RulesPage() {
     if (!window.confirm("Are you sure you want to delete this rule?")) return;
     try {
       await apiClient.delete(`/committee/rules/${id}`);
+      updateField("lastChange", { type: "deleted", timestamp: Date.now() });
       loadRules();
     } catch (err) {
       alert("❌ Failed to delete rule");
@@ -84,6 +103,7 @@ export default function RulesPage() {
       await apiClient.put(`/committee/rules/${id}/toggle`, {
         active: !currentState,
       });
+      updateField("lastChange", { type: "toggled", timestamp: Date.now() });
       loadRules();
     } catch (err) {
       alert("❌ Failed to toggle rule");
@@ -92,10 +112,8 @@ export default function RulesPage() {
 
   return (
     <>
-      {/* 🟣 Global Navbar */}
       <Navbar />
 
-      {/* 🟢 Page Content */}
       <div className="container py-4">
         <div className="d-flex justify-content-between align-items-center mb-3">
           <h4 className="fw-bold" style={{ color: "#6f42c1" }}>
@@ -145,12 +163,12 @@ export default function RulesPage() {
                           className="form-check-input"
                           type="checkbox"
                           checked={rule.is_active}
-                          onChange={() => handleToggle(rule.id, rule.is_active)}
+                          onChange={() =>
+                            handleToggle(rule.id, rule.is_active)
+                          }
                         />
                       </div>
                     </td>
-
-                    {/* 🎨 Actions */}
                     <td>
                       <div className="d-flex justify-content-center gap-2">
                         <Button
@@ -196,10 +214,12 @@ export default function RulesPage() {
           </table>
         </div>
 
-        {/* 🟣 Modal */}
+        {/* Modal */}
         <Modal show={showModal} onHide={() => setShowModal(false)} centered size="lg">
           <Modal.Header closeButton>
-            <Modal.Title>{editingRule ? "Edit Rule" : "Create New Rule"}</Modal.Title>
+            <Modal.Title>
+              {editingRule ? "Edit Rule" : "Create New Rule"}
+            </Modal.Title>
           </Modal.Header>
           <Modal.Body>
             <Form>
@@ -251,7 +271,11 @@ export default function RulesPage() {
 
               <Form.Group className="mb-3">
                 <Form.Label>Type</Form.Label>
-                <Form.Select name="type" value={form.type} onChange={handleChange}>
+                <Form.Select
+                  name="type"
+                  value={form.type}
+                  onChange={handleChange}
+                >
                   <option value="manual">Manual</option>
                   <option value="ai">AI</option>
                 </Form.Select>

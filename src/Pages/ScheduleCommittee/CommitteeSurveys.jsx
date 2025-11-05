@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import apiClient from "../../Services/apiClient";
 import { useAuth } from "../../Hooks/AuthContext";
 import Select from "react-select";
-import ScheduleCommitteeNavbar from "./ScheduleCommitteeNavbar"; // 🟣 import the navbar
+import ScheduleCommitteeNavbar from "./ScheduleCommitteeNavbar";
+import { useSharedMap } from "../../Hooks/useSharedMap"; // 🟣 real-time sync
 
 export default function CommitteeSurveys() {
   const { user } = useAuth();
@@ -21,6 +22,9 @@ export default function CommitteeSurveys() {
   const [fetchError, setFetchError] = useState("");
   const [submitError, setSubmitError] = useState("");
   const [submitSuccess, setSubmitSuccess] = useState("");
+
+  // 🟣 Y.js shared document
+  const { data: sharedData, updateField } = useSharedMap("committee_surveys");
 
   const canSubmit = useMemo(
     () => !!title.trim() && selectedLevels.length > 0 && !loading,
@@ -58,9 +62,21 @@ export default function CommitteeSurveys() {
       setSurveys([]);
     }
   };
+
   useEffect(() => {
     fetchSurveys();
   }, []);
+
+  // 🟣 Listen for updates from other committee members
+  useEffect(() => {
+    if (!sharedData?.lastChange) return;
+    const { type } = sharedData.lastChange;
+    console.log("📨 Survey Yjs update:", sharedData.lastChange);
+
+    if (["created", "deleted", "published", "closed"].includes(type)) {
+      fetchSurveys(); // refresh data
+    }
+  }, [sharedData]);
 
   // 🔹 Toggle courses
   const toggleCourse = (courseId) => {
@@ -105,6 +121,9 @@ export default function CommitteeSurveys() {
       setClosingDate("");
       setNotes("");
       fetchSurveys();
+
+      // 🟣 Notify others
+      updateField("lastChange", { type: "created", timestamp: Date.now() });
     } catch (err) {
       setSubmitError(err?.response?.data?.error || "Failed to create survey");
     } finally {
@@ -112,11 +131,12 @@ export default function CommitteeSurveys() {
     }
   };
 
-  // 🔹 Publish, close, delete
+  // 🔹 Publish, close, delete (with real-time signals)
   const handlePublish = async (id) => {
     try {
       await apiClient.put(`/surveys/${id}/publish`);
       fetchSurveys();
+      updateField("lastChange", { type: "published", timestamp: Date.now() });
     } catch {
       alert("Failed to publish survey");
     }
@@ -126,6 +146,7 @@ export default function CommitteeSurveys() {
     try {
       await apiClient.put(`/surveys/${id}/close`);
       fetchSurveys();
+      updateField("lastChange", { type: "closed", timestamp: Date.now() });
     } catch {
       alert("Failed to close survey");
     }
@@ -136,15 +157,14 @@ export default function CommitteeSurveys() {
     try {
       await apiClient.delete(`/surveys/${id}`);
       fetchSurveys();
+      updateField("lastChange", { type: "deleted", timestamp: Date.now() });
     } catch {
       alert("Failed to delete survey");
     }
   };
 
-  // 🟢 UI
   return (
     <>
-      {/* 🟣 Navbar at the top */}
       <ScheduleCommitteeNavbar />
 
       <div className="container py-3">
@@ -207,14 +227,6 @@ export default function CommitteeSurveys() {
                   }))}
                   value={selectedLevels}
                   onChange={(opt) => setSelectedLevels(opt || [])}
-                  styles={{
-                    control: (base) => ({
-                      ...base,
-                      borderColor: "#ced4da",
-                      borderRadius: "6px",
-                      boxShadow: "none",
-                    }),
-                  }}
                 />
               </div>
 

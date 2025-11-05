@@ -3,9 +3,10 @@ import api from "../../Services/apiClient";
 import SectionFormModal from "./SectionFormModal";
 import AIGeneratedModal from "./AIGeneratedModal";
 import Navbar from "./ScheduleCommitteeNavbar";
-import { useToast } from "../../Hooks/ToastContext"; // ✅ التوست
+import { useToast } from "../../Hooks/ToastContext";
+import { useSharedMap } from "../../Hooks/useSharedMap"; // 🟣 Y.js live sync
 
-// 🧭 مهم: الأيام كلها حروف صغيرة لتطابق قاعدة البيانات
+// 🧭 Day constants
 const DAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday"];
 
 const TIME_SLOTS = [
@@ -13,8 +14,8 @@ const TIME_SLOTS = [
   ["09:00", "10:00"],
   ["10:00", "11:00"],
   ["11:00", "12:00"],
-  ["12:00", "13:00"], // Lunch
-  ["13:00", "14:00"], // Midterm continuation
+  ["12:00", "13:00"],
+  ["13:00", "14:00"],
   ["14:00", "15:00"],
   ["15:00", "16:00"],
 ];
@@ -25,21 +26,16 @@ const isMidtermWindow = (day, start, end) =>
   ((start === "12:00" && end === "13:00") ||
     (start === "13:00" && end === "14:00"));
 
-// ✅ حساب عدد الخلايا حسب نوع السكشن
 const getDurationSlots = (start, end, type) => {
   const [sh, sm] = start.split(":").map(Number);
   const [eh, em] = end.split(":").map(Number);
   const duration = (eh * 60 + em - (sh * 60 + sm)) / 60;
-
-  // 🧠 لو النوع لاب نحجز ساعتين فقط مهما كانت المدة
   if (type?.toLowerCase() === "lab") return 2;
-
   return Math.max(1, Math.floor(duration));
 };
 
 export default function ScheduleBuilder() {
   const toast = useToast();
-
   const [levelId, setLevelId] = useState(3);
   const [groupId, setGroupId] = useState("");
   const [groups, setGroups] = useState([]);
@@ -59,7 +55,21 @@ export default function ScheduleBuilder() {
   const [faculty, setFaculty] = useState([]);
   const [rooms, setRooms] = useState([]);
 
-  // 🟢 تحميل القوائم
+  // 🟣 Connect to Y.js shared map for this page
+  const { data: sharedData, updateField } = useSharedMap("schedule_builder");
+
+  // 🟣 Listen for updates from others
+  useEffect(() => {
+    if (!sharedData?.lastChange) return;
+    const { type } = sharedData.lastChange;
+    console.log("📨 Schedule Yjs update:", sharedData.lastChange);
+
+    if (type === "reload") {
+      loadSections();
+    }
+  }, [sharedData]);
+
+  // 🟢 Load dropdowns
   useEffect(() => {
     (async () => {
       try {
@@ -79,7 +89,7 @@ export default function ScheduleBuilder() {
     })();
   }, []);
 
-  // 🟢 تحميل المجموعات لكل مستوى
+  // 🟢 Load groups
   useEffect(() => {
     if (!levelId) return;
     (async () => {
@@ -92,7 +102,7 @@ export default function ScheduleBuilder() {
     })();
   }, [levelId]);
 
-  // 🟢 تحميل السكاشن
+  // 🟢 Load sections
   const loadSections = async () => {
     setLoading(true);
     setErr("");
@@ -114,7 +124,7 @@ export default function ScheduleBuilder() {
     loadSections();
   }, [levelId, groupId]);
 
-  // ✅ تجهيز الجدول حسب الأيام
+  // 🧠 Grid builder
   const gridMap = useMemo(() => {
     const m = {};
     for (const s of sections) {
@@ -130,14 +140,14 @@ export default function ScheduleBuilder() {
     return m;
   }, [sections]);
 
-  // ✅ إضافة سكشن
+  // 🟢 Add section
   const openAdd = (day, start, end) => {
     setEditSection(null);
     setSlotCtx({ day, start, end, levelId });
     setShowModal(true);
   };
 
-  // ✅ تعديل سكشن
+  // 🟢 Edit section
   const openEdit = (sec) => {
     setEditSection(sec);
     setSlotCtx({
@@ -149,31 +159,33 @@ export default function ScheduleBuilder() {
     setShowModal(true);
   };
 
-  // ✅ حذف سكشن
+  // 🟢 Delete section
   const remove = async (sec) => {
     if (!window.confirm("Delete this section?")) return;
     try {
       await api.delete(`/sections/${sec.id}`);
       await loadSections();
+      updateField("lastChange", { type: "reload", timestamp: Date.now() }); // 🟣 Notify others
       toast.success(`Section ${sec.section_number} deleted successfully`);
     } catch {
       toast.error("Failed to delete section");
     }
   };
 
-  // ✅ نشر الجدول
+  // 🟢 Publish schedule
   const onPublish = async () => {
     if (!window.confirm("Publish schedule?")) return;
     try {
       await api.post(`/committee/schedule/publish/${levelId}`);
       toast.success("Schedule published successfully");
       await loadSections();
+      updateField("lastChange", { type: "reload", timestamp: Date.now() });
     } catch (e) {
       toast.error(e.response?.data?.error || "Failed to publish schedule");
     }
   };
 
-  // ✅ التوليد التلقائي (AI)
+  // 🟢 Auto-generate schedule
   const onAutoGenerate = async () => {
     try {
       setLoading(true);
@@ -260,7 +272,7 @@ export default function ScheduleBuilder() {
         {err && <div className="alert alert-danger">{err}</div>}
         {loading && <div className="alert alert-info">Loading schedule…</div>}
 
-        {/* جدول الجدول الزمني */}
+        {/* Schedule Table */}
         <div className="table-responsive">
           <table
             className="table table-bordered align-middle shadow-sm"
@@ -285,8 +297,6 @@ export default function ScheduleBuilder() {
                   {DAYS.map((day) => {
                     const dayKey = day.toLowerCase();
                     const sec = gridMap[dayKey]?.[start];
-
-                    // 🧠 FIXED: Check if this slot is part of an extended section that started earlier
                     const inPreviousSlot = Object.values(
                       gridMap[dayKey] || {}
                     ).some((s) => {
@@ -294,33 +304,38 @@ export default function ScheduleBuilder() {
                         s.start_time_hhmm || s.start_time?.slice(0, 5);
                       const sEnd = s.end_time_hhmm || s.end_time?.slice(0, 5);
                       if (!sStart || !sEnd) return false;
-
-                      // Check if this section spans multiple slots and started before current slot
                       const durationSlots = getDurationSlots(
                         sStart,
                         sEnd,
                         s.type
                       );
-                      if (durationSlots > 1 && sStart < start && sEnd > start) {
-                        return true;
-                      }
-                      return false;
+                      return (
+                        durationSlots > 1 && sStart < start && sEnd > start
+                      );
                     });
-
-                    // ⛔ If this cell is part of an extended section, skip rendering it entirely
-                    if (inPreviousSlot) {
-                      return null;
-                    }
+                    if (inPreviousSlot) return null;
 
                     const lunch = isLunch(start, end);
                     const midterm = isMidtermWindow(day, start, end);
                     const isBlocked = lunch || midterm;
 
-                    const cellBg = lunch
-                      ? "rgba(253, 230, 138, 0.5)"
-                      : midterm
-                      ? "rgba(252, 165, 165, 0.4)"
-                      : "transparent";
+                    let cellBg = "transparent";
+                    let textColor = "#000";
+                    if (lunch) cellBg = "rgba(253, 230, 138, 0.5)";
+                    else if (midterm) cellBg = "rgba(252, 165, 165, 0.4)";
+                    else if (sec) {
+                      const status = sec.status?.toLowerCase();
+                      if (status === "accepted") {
+                        cellBg = "#dcfce7";
+                        textColor = "#166534";
+                      } else if (status === "rejected") {
+                        cellBg = "#fee2e2";
+                        textColor = "#991b1b";
+                      } else if (status === "draft") {
+                        cellBg = "#f3f4f6";
+                        textColor = "#374151";
+                      }
+                    }
 
                     const rowSpan = sec
                       ? getDurationSlots(
@@ -336,6 +351,7 @@ export default function ScheduleBuilder() {
                         rowSpan={rowSpan}
                         style={{
                           background: cellBg,
+                          color: textColor,
                           height: 72 * rowSpan,
                           cursor: isBlocked ? "not-allowed" : "pointer",
                           opacity: isBlocked ? 0.7 : 1,
@@ -372,15 +388,8 @@ export default function ScheduleBuilder() {
                                 fontSize: "16px",
                                 color: "#dc3545",
                                 lineHeight: 1,
-                                transition: "color 0.2s ease",
                               }}
                               title="Delete section"
-                              onMouseEnter={(e) =>
-                                (e.target.style.color = "#ff4d4d")
-                              }
-                              onMouseLeave={(e) =>
-                                (e.target.style.color = "#dc3545")
-                              }
                               onClick={(e) => {
                                 e.stopPropagation();
                                 remove(sec);
@@ -388,7 +397,6 @@ export default function ScheduleBuilder() {
                             >
                               🗑️
                             </button>
-
                             <div className="badge text-bg-secondary">
                               {sec.course_code || sec.course_name}
                             </div>
@@ -398,6 +406,14 @@ export default function ScheduleBuilder() {
                             <small className="text-muted">
                               {sec.faculty_name}
                             </small>
+                            {sec.status && (
+                              <small
+                                className="fw-semibold mt-1"
+                                style={{ color: textColor }}
+                              >
+                                {sec.status}
+                              </small>
+                            )}
                           </div>
                         )}
                       </td>
@@ -409,7 +425,7 @@ export default function ScheduleBuilder() {
           </table>
         </div>
 
-        {/* ✅ النصائح أسفل الجدول */}
+        {/* Tips */}
         <div
           className="alert mt-4"
           style={{ background: "#FEF3C7", borderColor: "#FDE68A" }}
@@ -421,18 +437,22 @@ export default function ScheduleBuilder() {
             <li>Click on empty slots to add courses</li>
             <li>Click on filled slots to view/edit or delete section</li>
             <li>Lunch break (12–1 PM) is blocked on all days</li>
-            <li>
-              Monday and Wednesday (12–2 PM) are reserved for midterm exams
-            </li>
-            <li>Use Auto-Generate to view AI suggested schedule (not saved)</li>
+            <li>Monday and Wednesday (12–2 PM) reserved for midterm exams</li>
+            <li>Use Auto-Generate to view AI suggested schedule</li>
           </ul>
         </div>
 
-        {/* النوافذ */}
+        {/* Modals */}
         <SectionFormModal
           show={showModal}
           onClose={() => setShowModal(false)}
-          onSaved={loadSections}
+          onSaved={() => {
+            loadSections();
+            updateField("lastChange", {
+              type: "reload",
+              timestamp: Date.now(),
+            });
+          }}
           slotContext={slotCtx}
           editSection={editSection}
           courses={courses}

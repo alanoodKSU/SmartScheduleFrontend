@@ -1,12 +1,16 @@
 import React, { useEffect, useState } from "react";
 import apiClient from "../../Services/apiClient";
-import ScheduleCommitteeNavbar from "./ScheduleCommitteeNavbar"; // 🟣 أضف هذا السطر
+import ScheduleCommitteeNavbar from "./ScheduleCommitteeNavbar";
+import { useSharedMap } from "../../Hooks/useSharedMap"; // 🟣 for real-time sync
 
 export default function ExamSchedule() {
   const [courses, setCourses] = useState([]);
   const [levels, setLevels] = useState([]);
   const [selectedLevel, setSelectedLevel] = useState("");
   const [updatingId, setUpdatingId] = useState(null);
+
+  // 🟣 shared state for collaboration
+  const { data: sharedData, updateField } = useSharedMap("exam_schedule");
 
   // Load levels on mount
   useEffect(() => {
@@ -22,23 +26,32 @@ export default function ExamSchedule() {
   }, []);
 
   // Load courses when level changes
-  useEffect(() => {
-    const loadCourses = async () => {
-      try {
-        const endpoint = selectedLevel
-          ? `/courses/exam-schedule?level_id=${selectedLevel}`
-          : `/courses/exam-schedule`;
+  const loadCourses = async () => {
+    try {
+      const endpoint = selectedLevel
+        ? `/courses/exam-schedule?level_id=${selectedLevel}`
+        : `/courses/exam-schedule`;
 
-        const res = await apiClient.get(endpoint);
-        setCourses(res.data);
-      } catch (err) {
-        console.error("❌ Failed to load courses:", err);
-      }
-    };
+      const res = await apiClient.get(endpoint);
+      setCourses(res.data);
+    } catch (err) {
+      console.error("❌ Failed to load courses:", err);
+    }
+  };
+
+  useEffect(() => {
     loadCourses();
   }, [selectedLevel]);
 
-  // ✅ Date formatting
+  // 🟣 listen for real-time updates
+  useEffect(() => {
+    if (!sharedData?.lastChange) return;
+    const { type } = sharedData.lastChange;
+    console.log("📡 Exam schedule update:", type);
+    if (type === "updated") loadCourses();
+  }, [sharedData]);
+
+  // ✅ Format date
   const formatDate = (dateString) => {
     if (!dateString) return "";
     try {
@@ -53,7 +66,7 @@ export default function ExamSchedule() {
     }
   };
 
-  // ✅ Date validation & submission
+  // ✅ Date validation & update
   const handleDateChange = async (courseId, newDate) => {
     if (!newDate) {
       alert("Please enter a valid date");
@@ -66,7 +79,10 @@ export default function ExamSchedule() {
       if (parts.length === 3) {
         let [month, day, year] = parts;
         if (year.length === 2) year = `20${year}`;
-        formattedDate = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+        formattedDate = `${year}-${month.padStart(2, "0")}-${day.padStart(
+          2,
+          "0"
+        )}`;
       }
     }
 
@@ -78,7 +94,10 @@ export default function ExamSchedule() {
 
     const dateObj = new Date(formattedDate);
     const currentYear = new Date().getFullYear();
-    if (dateObj.getFullYear() < currentYear - 1 || dateObj.getFullYear() > currentYear + 5) {
+    if (
+      dateObj.getFullYear() < currentYear - 1 ||
+      dateObj.getFullYear() > currentYear + 5
+    ) {
       alert("Please enter a valid year (within reasonable range)");
       return;
     }
@@ -89,14 +108,22 @@ export default function ExamSchedule() {
         exam_date: formattedDate,
       });
 
+      // 🟣 locally update
       setCourses((prev) =>
         prev.map((c) =>
           c.id === courseId ? { ...c, exam_date: formattedDate } : c
         )
       );
+
+      // 🟣 broadcast update
+      updateField("lastChange", { type: "updated", timestamp: Date.now() });
     } catch (err) {
       console.error("❌ Failed to update exam date:", err);
-      alert(`Failed to update exam date: ${err.response?.data?.message || err.message}`);
+      alert(
+        `Failed to update exam date: ${
+          err.response?.data?.message || err.message
+        }`
+      );
     } finally {
       setUpdatingId(null);
     }
@@ -104,11 +131,10 @@ export default function ExamSchedule() {
 
   return (
     <>
-      {/* 🟣 Navbar at the top */}
       <ScheduleCommitteeNavbar />
 
       <div className="container py-4">
-        {/* Header and Filter */}
+        {/* Header + Level Filter */}
         <div className="d-flex justify-content-between align-items-center mb-4">
           <h4 className="fw-bold" style={{ color: "#6f42c1" }}>
             📅 Exam Schedule
@@ -132,7 +158,7 @@ export default function ExamSchedule() {
           </div>
         </div>
 
-        {/* Courses Table */}
+        {/* Table */}
         <div className="table-responsive shadow-sm rounded-4">
           <table className="table align-middle text-center mb-0">
             <thead
@@ -160,7 +186,9 @@ export default function ExamSchedule() {
                           className="form-control border-0 shadow-sm text-center"
                           style={{ maxWidth: "160px" }}
                           value={formatDate(course.exam_date)}
-                          onChange={(e) => handleDateChange(course.id, e.target.value)}
+                          onChange={(e) =>
+                            handleDateChange(course.id, e.target.value)
+                          }
                           disabled={updatingId === course.id}
                         />
                         {updatingId === course.id && (
