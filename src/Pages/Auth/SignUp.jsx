@@ -40,39 +40,43 @@ export default function SignUp() {
     fetchLevels();
   }, []);
 
-  // ✅ Validate Email
+  // =========================================================
+  // ✅ Validate Email + Auto Detect Student Role
+  // =========================================================
   const validateEmail = (email, role) => {
-    if (!email || !role) {
+    if (!email) {
       setEmailError("");
       return;
     }
 
-    if (role === "student") {
-      const studentEmailRegex = /^\d{9}@student\.ksu\.edu\.sa$/;
-      if (!studentEmailRegex.test(email)) {
-        setEmailError(
-          "Student email must start with 9 digits and end with @student.ksu.edu.sa"
-        );
-        return;
-      }
-    } else if (role !== "student" && !email.endsWith("@ksu.edu.sa")) {
-      setEmailError("Faculty/Staff must use @ksu.edu.sa email");
+    const studentEmailRegex = /^\d{9}@student\.ksu\.edu\.sa$/;
+
+    // Auto-set student role if email matches student format
+    if (studentEmailRegex.test(email)) {
+      setFormData((prev) => ({ ...prev, role: "student" }));
+      setEmailError("");
+      return;
+    }
+
+    // Faculty/staff validation
+    if (!email.endsWith("@ksu.edu.sa")) {
+      setEmailError("Email must belong to KSU domain");
       return;
     }
 
     setEmailError("");
   };
 
+  // =========================================================
   // ✅ Handle input changes
+  // =========================================================
   const handleChange = (e) => {
     const { name, value } = e.target;
+
     setFormData((prev) => ({ ...prev, [name]: value }));
 
-    if (name === "email" || name === "role") {
-      validateEmail(
-        name === "email" ? value : formData.email,
-        name === "role" ? value : formData.role
-      );
+    if (name === "email") {
+      validateEmail(value, formData.role);
     }
 
     if (name === "password") {
@@ -81,7 +85,9 @@ export default function SignUp() {
     }
   };
 
+  // =========================================================
   // ✅ Handle submit
+  // =========================================================
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -109,11 +115,12 @@ export default function SignUp() {
       if (formData.role === "student") {
         payload.name = formData.name;
         payload.level_id = formData.level_id;
-      } else if (formData.role === "faculty") {
+      } else {
         payload.name = formData.name;
       }
 
       await apiClient.post("/auth/register", payload);
+
       setSuccess("✅ Account created successfully! Redirecting...");
       setTimeout(() => navigate("/login"), 2000);
     } catch (err) {
@@ -122,6 +129,10 @@ export default function SignUp() {
       setLoading(false);
     }
   };
+
+  // =========================================================
+  // ✅ UI Rendering
+  // =========================================================
 
   return (
     <div
@@ -176,7 +187,7 @@ export default function SignUp() {
             )}
           </div>
 
-          {/* Password with strength meter */}
+          {/* Password */}
           <div className="mb-3">
             <label className="form-label fw-semibold">Password</label>
             <input
@@ -191,7 +202,6 @@ export default function SignUp() {
 
             {formData.password && (
               <>
-                {/* Progress bar */}
                 <div
                   className="progress mt-2"
                   style={{ height: "8px", borderRadius: "10px" }}
@@ -207,7 +217,6 @@ export default function SignUp() {
                   ></div>
                 </div>
 
-                {/* Strength and missing rules */}
                 <div className="d-flex justify-content-between small mt-1">
                   <span
                     className="fw-semibold"
@@ -216,12 +225,11 @@ export default function SignUp() {
                     {passwordInfo.strength}
                   </span>
 
-                  {!passwordInfo.isValid &&
-                    passwordInfo.missing.length > 0 && (
-                      <span className="text-danger text-end small">
-                        {passwordInfo.missing.join(", ")}
-                      </span>
-                    )}
+                  {!passwordInfo.isValid && passwordInfo.missing.length > 0 && (
+                    <span className="text-danger text-end small">
+                      {passwordInfo.missing.join(", ")}
+                    </span>
+                  )}
                 </div>
               </>
             )}

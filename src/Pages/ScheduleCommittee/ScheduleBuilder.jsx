@@ -39,9 +39,13 @@ export default function ScheduleBuilder() {
   const [levelId, setLevelId] = useState(3);
   const [groupId, setGroupId] = useState("");
   const [groups, setGroups] = useState([]);
+  const [students, setStudents] = useState([]); // ✅ Added students state
   const [sections, setSections] = useState([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
+
+  // 🔹 new: saving version state
+  const [savingVersion, setSavingVersion] = useState(false);
 
   // Modals
   const [showModal, setShowModal] = useState(false);
@@ -89,15 +93,19 @@ export default function ScheduleBuilder() {
     })();
   }, []);
 
-  // 🟢 Load groups
+  // 🟢 Load groups and students
   useEffect(() => {
     if (!levelId) return;
     (async () => {
       try {
-        const { data } = await api.get(`/dropdowns/groups?level_id=${levelId}`);
-        setGroups(data || []);
+        const [groupsRes, studentsRes] = await Promise.all([
+          api.get(`/dropdowns/groups?level_id=${levelId}`),
+          api.get(`/dropdowns/students?level_id=${levelId}`)
+        ]);
+        setGroups(groupsRes.data || []);
+        setStudents(studentsRes.data || []);
       } catch {
-        toast.warning("Could not load groups for this level");
+        toast.warning("Could not load groups or students for this level");
       }
     })();
   }, [levelId]);
@@ -205,6 +213,21 @@ export default function ScheduleBuilder() {
     toast.info("Export feature not implemented yet");
   };
 
+  // 🆕 Save Version (calls backend jsondiffpatch logic)
+  const onSaveVersion = async () => {
+    if (!window.confirm("Save current schedule as a version?")) return;
+    try {
+      setSavingVersion(true);
+      // adjust base path if you mounted routes differently (e.g. /api/schedule-history)
+      await api.post(`/schedule-history/${levelId}/save`);
+      toast.success("Schedule version saved successfully");
+    } catch (e) {
+      toast.error(e.response?.data?.error || "Failed to save schedule version");
+    } finally {
+      setSavingVersion(false);
+    }
+  };
+
   return (
     <>
       <Navbar />
@@ -260,6 +283,16 @@ export default function ScheduleBuilder() {
             <button className="btn btn-success btn-sm" onClick={onExport}>
               Export
             </button>
+
+            {/* 🆕 Save Version button */}
+            <button
+              className="btn btn-warning btn-sm text-white"
+              onClick={onSaveVersion}
+              disabled={savingVersion}
+            >
+              {savingVersion ? "Saving…" : "Save Version"}
+            </button>
+
             <button
               className="btn btn-outline-primary btn-sm"
               onClick={onPublish}
@@ -458,7 +491,8 @@ export default function ScheduleBuilder() {
           courses={courses}
           faculty={faculty}
           rooms={rooms}
-          levelId={levelId}
+          groups={groups} // ✅ Now passing groups
+          students={students} // ✅ Now passing students
         />
 
         {aiModal && (

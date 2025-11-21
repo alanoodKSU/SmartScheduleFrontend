@@ -11,104 +11,114 @@ export default function SectionFormModal({
   courses = [],
   faculty = [],
   rooms = [],
+  groups = [],
+  students = [],
 }) {
-  const [groups, setGroups] = useState([]);
-  const [students, setStudents] = useState([]);
   const [availableRooms, setAvailableRooms] = useState([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [forceLevelId, setForceLevelId] = useState("");
 
-  const [form, setForm] = useState({
+  const getInitialFormState = () => ({
     course_id: "",
     section_number: 1,
     type: "tutorial",
     faculty_id: "",
     room_id: "",
-    day: slotContext?.day || "",
-    start_time: slotContext?.start || "",
-    end_time: slotContext?.end || "",
-    level_id: slotContext?.levelId || "",
+    day: "",
+    start_time: "",
+    end_time: "",
+    level_id: "",
     groups: [],
     students: [],
   });
 
-  // ✅ تعبئة البيانات عند الفتح أو التعديل
+  const [form, setForm] = useState(getInitialFormState());
+
+  /* --------------------------------------------------------
+     ✅ FIXED normalizeSection()
+     Backend returns: groups=[1,2] students=[5,10]
+     Now handled correctly.
+  -------------------------------------------------------- */
+  const normalizeSection = (section, slotCtx) => {
+    const levelId =
+      section.level_id || section.levelId || slotCtx?.levelId || "";
+
+    const startTime =
+      section.start_time_hhmm ||
+      section.start_time?.slice(0, 5) ||
+      slotCtx?.start?.slice(0, 5) ||
+      "";
+
+    const endTime =
+      section.end_time_hhmm ||
+      section.end_time?.slice(0, 5) ||
+      slotCtx?.end?.slice(0, 5) ||
+      "";
+
+    const dayRaw = slotCtx?.day || section.day || "";
+
+    const courseId = section.course_id ? Number(section.course_id) : "";
+    const facultyId = section.faculty_id ? Number(section.faculty_id) : "";
+    const roomId = section.room_id ? Number(section.room_id) : "";
+
+    // 🔥 FIXED HERE
+    const groupIds = Array.isArray(section.groups)
+      ? section.groups.map((g) => Number(g)).filter(Boolean)
+      : [];
+
+    const studentIds = Array.isArray(section.students)
+      ? section.students.map((s) => Number(s)).filter(Boolean)
+      : [];
+
+    return {
+      course_id: courseId,
+      section_number: section.section_number || 1,
+      type: section.type?.toLowerCase() || "tutorial",
+      faculty_id: facultyId,
+      room_id: roomId,
+      day: dayRaw.toLowerCase(),
+      start_time: startTime,
+      end_time: endTime,
+      level_id: levelId,
+      groups: groupIds,
+      students: studentIds,
+    };
+  };
+
+  /* --------------------------------------------------------
+     Reset form on open (Edit / Add Mode)
+  -------------------------------------------------------- */
   useEffect(() => {
-    if (!show) return;
+    if (!show) {
+      setForm(getInitialFormState());
+      setForceLevelId("");
+      return;
+    }
 
     if (editSection) {
-      const levelId =
-        editSection.level_id ||
-        editSection.levelId ||
-        slotContext?.levelId ||
-        null;
-
-      setForm({
-        course_id: editSection.course_id || "",
-        section_number: editSection.section_number || 1,
-        type: editSection.type || "tutorial",
-        faculty_id: editSection.faculty_id || "",
-        room_id: editSection.room_id || "",
-        day: editSection.day || "",
-        start_time:
-          editSection.start_time_hhmm ||
-          editSection.start_time?.slice(0, 5) ||
-          "",
-        end_time:
-          editSection.end_time_hhmm || editSection.end_time?.slice(0, 5) || "",
-        level_id: levelId || "",
-        groups:
-          editSection.groups?.map((g) => g.id || g.group_id || g.value) || [],
-        students:
-          editSection.students?.map((s) => s.id || s.student_id || s.value) ||
-          [],
-      });
-
-      setForceLevelId(levelId);
-    } else if (slotContext) {
-      setForm((prev) => ({
-        ...prev,
-        day: slotContext.day,
-        start_time: slotContext.start,
-        end_time: slotContext.end,
-        level_id: slotContext.levelId,
-        section_number: 1,
-      }));
-      setForceLevelId(slotContext.levelId);
+      const normalized = normalizeSection(editSection, slotContext);
+      setForm(normalized);
+      setForceLevelId(normalized.level_id);
+    } else {
+      const newForm = getInitialFormState();
+      if (slotContext) {
+        newForm.day = slotContext.day?.toLowerCase() || "";
+        newForm.start_time = slotContext.start || "";
+        newForm.end_time = slotContext.end || "";
+        newForm.level_id = slotContext.levelId || "";
+      }
+      setForm(newForm);
+      setForceLevelId(slotContext?.levelId || "");
     }
   }, [show, editSection, slotContext]);
 
-  // ✅ تحميل القروبات والطلاب للمستوى
+  /* --------------------------------------------------------
+     Load available rooms
+  -------------------------------------------------------- */
   useEffect(() => {
     if (!show) return;
-    const fetchLists = async () => {
-      try {
-        const levelId = form.level_id || forceLevelId;
-        if (!levelId) {
-          setGroups([]);
-          setStudents([]);
-          return;
-        }
 
-        const [gr, st] = await Promise.all([
-          api.get(`/dropdowns/groups?level_id=${levelId}`),
-          api.get(`/dropdowns/students?level_id=${levelId}`),
-        ]);
-
-        setGroups(gr.data || []);
-        setStudents(st.data || []);
-      } catch {
-        setGroups([]);
-        setStudents([]);
-      }
-    };
-    fetchLists();
-  }, [show, form.level_id, forceLevelId]);
-
-  // ✅ تحميل الغرف المتاحة حسب اليوم والوقت
-  useEffect(() => {
-    if (!show) return;
     const fetchAvailableRooms = async () => {
       try {
         if (!form.day || !form.start_time || !form.end_time) {
@@ -119,7 +129,7 @@ export default function SectionFormModal({
 
         const { data } = await api.get("/sections/available-rooms", {
           params: {
-            day: form.day.toUpperCase(), // ✅ تحويل اليوم لأحرف كبيرة
+            day: form.day.toUpperCase(),
             start_time: form.start_time,
             end_time: form.end_time,
           },
@@ -135,8 +145,45 @@ export default function SectionFormModal({
     fetchAvailableRooms();
   }, [show, form.day, form.start_time, form.end_time]);
 
-  // ✅ عند الحفظ
-  // ✅ عند الحفظ
+  /* --------------------------------------------------------
+     Helpers
+  -------------------------------------------------------- */
+  const customFilterOption = (option, inputValue) =>
+    option.label.toLowerCase().includes(inputValue.toLowerCase());
+
+  const groupOptions = groups.map((g) => ({
+    value: g.id,
+    label: g.name,
+  }));
+
+  const studentOptions = students.map((s) => ({
+    value: s.id,
+    label: s.name,
+  }));
+
+  const getSelectedGroups = () =>
+    groupOptions.filter((o) => form.groups.includes(Number(o.value)));
+
+  const getSelectedStudents = () =>
+    studentOptions.filter((o) => form.students.includes(Number(o.value)));
+
+  /* --------------------------------------------------------
+     Submit
+  -------------------------------------------------------- */
+  const isInvalidTime = () => {
+    const { start_time, end_time, day } = form;
+    const upperDay = day?.toUpperCase();
+    if (start_time === "12:00" && end_time === "13:00")
+      return "Lunch break slot!";
+    if (
+      (upperDay === "MONDAY" || upperDay === "WEDNESDAY") &&
+      ((start_time === "12:00" && end_time === "13:00") ||
+        (start_time === "13:00" && end_time === "14:00"))
+    )
+      return "Exam slot (Monday/Wednesday 12–2)";
+    return null;
+  };
+
   const onSubmit = async (e) => {
     e.preventDefault();
     setErr("");
@@ -153,24 +200,26 @@ export default function SectionFormModal({
     }
 
     setLoading(true);
+
     try {
-      // ✅ تحويل اليوم للصيغة الصحيحة: الحرف الأول كبير والباقي صغير
-      const normalizedDay = form.day
-        ? form.day.charAt(0).toUpperCase() + form.day.slice(1).toLowerCase()
-        : "";
+      const normalizedDay =
+        form.day.charAt(0).toUpperCase() + form.day.slice(1).toLowerCase();
 
       const payload = {
         ...form,
-        day: normalizedDay, // 🔥 الآن سترسل "Monday" بدل "MONDAY"
-        section_number: form.section_number ? Number(form.section_number) : 1,
+        day: normalizedDay,
+        section_number: Number(form.section_number),
+        course_id: form.course_id ? Number(form.course_id) : null,
+        faculty_id: form.faculty_id ? Number(form.faculty_id) : null,
+        room_id: form.room_id ? Number(form.room_id) : null,
+        groups: form.groups.map((id) => Number(id)),
+        students: form.students.map((id) => Number(id)),
       };
-
-      console.log("Sending payload:", payload); // للت debugging
 
       if (editSection) {
         await api.put(`/sections/${editSection.id}`, payload);
       } else {
-        await api.post(`/sections`, payload); // ✅ تأكد أنه POST للإضافة
+        await api.post(`/sections`, payload);
       }
 
       onSaved?.();
@@ -182,25 +231,9 @@ export default function SectionFormModal({
         error.message ||
         "Failed to save section";
       setErr(msg);
-      console.error("API Error:", error.response?.data);
     } finally {
       setLoading(false);
     }
-  };
-
-  // ✅ فحص الوقت المحظور
-  const isInvalidTime = () => {
-    const { start_time, end_time, day } = form;
-    const upperDay = day?.toUpperCase();
-    if (start_time === "12:00" && end_time === "13:00")
-      return "Lunch break slot!";
-    if (
-      (upperDay === "MONDAY" || upperDay === "WEDNESDAY") &&
-      ((start_time === "12:00" && end_time === "13:00") ||
-        (start_time === "13:00" && end_time === "14:00"))
-    )
-      return "Exam slot (Monday/Wednesday 12–2)";
-    return null;
   };
 
   const onChange = (e) => {
@@ -210,39 +243,24 @@ export default function SectionFormModal({
 
   if (!show) return null;
 
-  // ✅ إعداد الخيارات
-  const customFilterOption = (option, inputValue) =>
-    option.label.toLowerCase().includes(inputValue.toLowerCase());
-
   const courseOptions = courses.map((c) => ({
     value: c.id,
     label: `${c.code || ""} ${c.name || ""}`.trim(),
   }));
+
   const facultyOptions = faculty.map((f) => ({
     value: f.id,
     label: f.name,
   }));
+
   const roomOptions = availableRooms.map((r) => ({
     value: r.id,
     label: `${r.name}`,
   }));
-  const groupOptions = groups.map((g) => ({
-    value: g.id,
-    label: g.name,
-  }));
-  const studentOptions = students.map((s) => ({
-    value: s.id,
-    label: s.name,
-  }));
 
-  const getValueWithFallback = (options, id, name) =>
-    options.find((o) => o.value === id) ||
-    (id && name ? { value: id, label: name } : null);
-
-  const getSelectedGroups = () =>
-    groupOptions.filter((option) => form.groups.includes(option.value));
-
-  // ✅ واجهة المستخدم
+  /* --------------------------------------------------------
+     Render
+  -------------------------------------------------------- */
   return (
     <div className="modal d-block" style={{ background: "rgba(0,0,0,.35)" }}>
       <div className="modal-dialog modal-lg modal-dialog-scrollable">
@@ -268,10 +286,8 @@ export default function SectionFormModal({
                   <label className="form-label">Course</label>
                   <Select
                     options={courseOptions}
-                    value={getValueWithFallback(
-                      courseOptions,
-                      form.course_id,
-                      editSection?.course_name
+                    value={courseOptions.find(
+                      (o) => o.value === Number(form.course_id)
                     )}
                     onChange={(opt) =>
                       setForm((p) => ({ ...p, course_id: opt?.value || "" }))
@@ -283,7 +299,7 @@ export default function SectionFormModal({
                   />
                 </div>
 
-                {/* Section Number */}
+                {/* Section # */}
                 <div className="col-md-3">
                   <label className="form-label">Section #</label>
                   <input
@@ -318,10 +334,8 @@ export default function SectionFormModal({
                   <label className="form-label">Instructor</label>
                   <Select
                     options={facultyOptions}
-                    value={getValueWithFallback(
-                      facultyOptions,
-                      form.faculty_id,
-                      editSection?.faculty_name
+                    value={facultyOptions.find(
+                      (o) => o.value === Number(form.faculty_id)
                     )}
                     onChange={(opt) =>
                       setForm((p) => ({ ...p, faculty_id: opt?.value || "" }))
@@ -337,10 +351,8 @@ export default function SectionFormModal({
                   <label className="form-label">Room</label>
                   <Select
                     options={roomOptions}
-                    value={getValueWithFallback(
-                      roomOptions,
-                      form.room_id,
-                      editSection?.room_name
+                    value={roomOptions.find(
+                      (o) => o.value === Number(form.room_id)
                     )}
                     onChange={(opt) =>
                       setForm((p) => ({ ...p, room_id: opt?.value || "" }))
@@ -353,18 +365,15 @@ export default function SectionFormModal({
                     isSearchable
                     filterOption={customFilterOption}
                   />
-                  {availableRooms.length === 0 && (
-                    <small className="text-danger">
-                      No available rooms for this time.
-                    </small>
-                  )}
                 </div>
 
-                {/* Day & Level */}
+                {/* Day */}
                 <div className="col-md-2">
                   <label className="form-label">Day</label>
                   <input className="form-control" value={form.day} disabled />
                 </div>
+
+                {/* Level */}
                 <div className="col-md-2">
                   <label className="form-label">Level</label>
                   <input
@@ -401,9 +410,7 @@ export default function SectionFormModal({
                   <Select
                     isMulti
                     options={studentOptions}
-                    value={studentOptions.filter((o) =>
-                      form.students.includes(o.value)
-                    )}
+                    value={getSelectedStudents()}
                     onChange={(selected) =>
                       setForm((p) => ({
                         ...p,
