@@ -47,6 +47,7 @@ export default function StudentSchedulePage() {
       try {
         console.log("🔍 Fetching schedule for user ID:", userId);
         const { data } = await apiClient.get(`/sections/schedule/${userId}`);
+           console.log("✅ Schedule data received:", data);
         setSections(data.sections);
         setFilteredSections(data.sections);
         setStudentInfo(data.student);

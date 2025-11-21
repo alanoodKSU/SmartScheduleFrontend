@@ -1,5 +1,13 @@
 import React, { useEffect, useState } from "react";
-import { Table, Spinner, Card, Form, Button, Badge, InputGroup } from "react-bootstrap";
+import {
+  Table,
+  Spinner,
+  Card,
+  Form,
+  Button,
+  Badge,
+  InputGroup,
+} from "react-bootstrap";
 import {
   FaTable,
   FaFilter,
@@ -81,7 +89,9 @@ export default function AllLevelsSchedulePage() {
       const params = { level_id: selectedLevel };
       if (selectedGroup) params.group_id = selectedGroup; // 🆕 group_id filter
 
-      const { data } = await apiClient.get("/sections", { params });
+      const { data } = await apiClient.get("/sections/student/all-levels", {
+        params,
+      });
       setSections(data);
       setFilteredSections(data);
     } catch (err) {
